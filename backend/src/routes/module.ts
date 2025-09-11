@@ -156,7 +156,12 @@ router.get('/:id/download', async (req: IAuthRequest, res: Response): Promise<vo
         zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2)), 'Module manifest');
 
         const zipBuffer = zip.toBuffer();
-        const fileName = `${module.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.zipo`;
+        const sanitizedTitle = module.title
+            .trim() // Remove leading/trailing whitespace
+            .replace(/[^a-z0-9]+/gi, '_') // Replace one or more non-alphanumeric chars with a single _
+            .replace(/^_+|_+$/g, ''); // Remove leading/trailing underscores
+
+        const fileName = `${sanitizedTitle || 'module'}.zipo`;
 
         res.set('Content-Type', 'application/zip');
         res.set('Content-Disposition', `attachment; filename="${fileName}"`);
