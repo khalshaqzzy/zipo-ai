@@ -88,7 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartSession }) => {
         ref={fileInputRef}
         onChange={handleFileImport}
         className="hidden"
-        accept=".zipo"
+        accept=".zipo,application/zip"
       />
       <div className="min-h-screen bg-gray-50 p-8">
         <div className="max-w-6xl mx-auto">
