@@ -38,6 +38,10 @@ export interface IModule extends Document {
   transcript?: string[];
   /** The generation status of the module. */
   status: 'generating' | 'completed' | 'failed';
+  /** The timestamp when the module was created. */
+  createdAt: Date;
+  /** The timestamp when the module was last updated. */
+  updatedAt: Date;
 }
 
 const moduleSchema = new Schema({
