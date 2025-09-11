@@ -192,9 +192,46 @@ const PlayModulePage: React.FC = () => {
     setIsCanvasVisible(false); // Collapse the canvas
   };
 
-  const handleDownload = () => {
-    if (moduleId) {
-      window.open(`/api/modules/${moduleId}/download`, '_blank');
+  const handleDownload = async () => {
+    if (!moduleId) return;
+
+    addToast('Preparing download...', 'info');
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/modules/${moduleId}/download`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error('Download failed. Could not fetch module.');
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = 'module.zipo'; // Default filename
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+        if (filenameMatch && filenameMatch.length > 1) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+
+      addToast('Download started!', 'success');
+
+    } catch (error) {
+      console.error('Download error:', error);
+      addToast((error as Error).message, 'error');
     }
   };
 
