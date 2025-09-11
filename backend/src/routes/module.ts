@@ -18,13 +18,16 @@ router.use(authMiddleware);
 router.post('/import', (req: IAuthRequest, res: Response) => {
     uploadZipo(req, res, async (err: any) => {
         if (err) {
+            console.error('[Zipo-Debug] Multer error during import:', err);
             return res.status(400).json({ message: err.message });
         }
 
         if (!req.file) {
+            console.error('[Zipo-Debug] Import failed: No file uploaded.');
             return res.status(400).json({ message: 'No .zipo file uploaded.' });
         }
 
+        console.log(`[Zipo-Debug] Starting module import for file: ${req.file.originalname}`);
         const filePath = req.file.path;
 
         try {
@@ -43,11 +46,12 @@ router.post('/import', (req: IAuthRequest, res: Response) => {
             });
 
             await newModule.save();
+            console.log(`[Zipo-Debug] Successfully imported and saved module "${newModule.title}" with ID: ${newModule._id}`);
 
             res.status(201).json(newModule);
 
         } catch (error) {
-            console.error('Error importing module:', error);
+            console.error('[Zipo-Debug] Error processing imported module:', error);
             res.status(500).json({ message: 'Failed to import module.' });
         } finally {
             // Clean up the uploaded file
@@ -161,10 +165,12 @@ router.get('/:id/download', async (req: IAuthRequest, res: Response): Promise<vo
             .replace(/[^a-z0-9]/gi, ''); // Remove any remaining non-alphanumeric characters
 
         const fileName = `${sanitizedTitle || 'module'}.zipo`;
+        const contentDisposition = `attachment; filename=${fileName}`;
         console.log(`[Zipo-Debug] Generated filename for download: "${fileName}"`);
+        console.log(`[Zipo-Debug] Setting Content-Disposition header to: "${contentDisposition}"`);
 
         res.set('Content-Type', 'application/zip');
-        res.set('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.set('Content-Disposition', contentDisposition);
         res.send(zipBuffer);
 
     } catch (error) {
