@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../hooks/useToast';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
-import { ArrowLeft, Loader2, Play, Pause, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, RotateCcw, Download } from 'lucide-react';
 import { Stage, Layer, Text as KonvaText, Rect, Arrow, Circle } from 'react-konva';
 import zipoIcon from '../../assets/zipo_white.png';
 
@@ -192,6 +192,12 @@ const PlayModulePage: React.FC = () => {
     setIsCanvasVisible(false); // Collapse the canvas
   };
 
+  const handleDownload = () => {
+    if (moduleId) {
+      window.open(`/api/modules/${moduleId}/download`, '_blank');
+    }
+  };
+
   const renderCanvasObject = (obj: any) => {
     const { command, payload, id } = obj;
     switch (command) {
@@ -267,6 +273,10 @@ const PlayModulePage: React.FC = () => {
                 <button onClick={handleReset} className="flex items-center space-x-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-black rounded-lg transition-all">
                     <RotateCcw className="w-4 h-4" />
                     <span>Reset</span>
+                </button>
+                <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-black rounded-lg transition-all">
+                    <Download className="w-4 h-4" />
+                    <span>Download</span>
                 </button>
             </div>
         </div>

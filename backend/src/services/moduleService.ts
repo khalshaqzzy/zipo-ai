@@ -2,6 +2,7 @@ import { Module } from '../models/Module';
 import { File } from '../models/File';
 import { generativeModel, createModulePrompt, createModulePlanPrompt } from '../llm';
 import { extractTextFromFile } from '../fileprocessing';
+import { synthesizeSpeech } from './ttsService';
 import { isValidObjectId } from 'mongoose';
 
 interface GenerationParams {
@@ -69,7 +70,7 @@ export const generateModule = async ({ prompt, fileIds, moduleLength, moduleLang
 
   const newModule = new Module({
     userId,
-    title: title || prompt.substring(0, 40) + '...',
+    title: title || prompt.substring(0, 40) + '...', 
     prompt,
     moduleLength,
     language: moduleLanguage,
@@ -132,21 +133,36 @@ ${content}
 
         const commandsJsonString = extractJson(rawText);
 
-        console.log("\n--- JSON STRING TO BE PARSED ---\
-", commandsJsonString, "\n--- END OF JSON STRING ---\
-");
+        console.log("\n--- JSON STRING TO BE PARSED ---", commandsJsonString, "\n--- END OF JSON STRING ---");
 
         const commands = JSON.parse(commandsJsonString);
 
-        console.log("\n--- PARSED COMMANDS OBJECT ---\
-", commands, "\n--- END OF PARSED COMMANDS ---\
-");
+        console.log("\n--- PARSED COMMANDS OBJECT ---", commands, "\n--- END OF PARSED COMMANDS ---");
 
         if (!Array.isArray(commands)) throw new Error(`LLM response for step ${i+1} was not a JSON array.`);
         console.log(`[ModuleService] INFO: Step ${i + 1} generated ${commands.length} commands.`);
 
-        accumulatedCanvasState.push(...commands);
-        const spokenTexts = commands.filter(cmd => cmd.command === 'speak').map(cmd => cmd.payload.text);
+        // Process commands to add TTS audio
+        const processedCommands = await Promise.all(
+          commands.map(async (cmd: any) => {
+            if (cmd.command === 'speak' && cmd.payload.text) {
+              try {
+                console.log(`[ModuleService] INFO: Synthesizing speech for step ${i + 1}...`);
+                const audioContent = await synthesizeSpeech(cmd.payload.text, moduleLanguage);
+                console.log(`[ModuleService] SUCCESS: Speech synthesized for step ${i + 1}.`);
+                return { ...cmd, payload: { ...cmd.payload, audioContent } };
+              } catch (ttsError) {
+                console.error(`[ModuleService] ERROR: TTS synthesis failed for step ${i + 1}. Command text: "${cmd.payload.text}"`, ttsError);
+                // Return command without audio if TTS fails, so the module can still be created
+                return cmd;
+              }
+            }
+            return cmd;
+          })
+        );
+
+        accumulatedCanvasState.push(...processedCommands);
+        const spokenTexts = processedCommands.filter(cmd => cmd.command === 'speak').map(cmd => cmd.payload.text);
         accumulatedTranscript.push(...spokenTexts);
 
         // Progress is now only saved at the end.

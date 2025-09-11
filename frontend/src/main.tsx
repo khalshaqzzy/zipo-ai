@@ -5,6 +5,17 @@ import App from './App.tsx';
 import './index.css';
 import { SettingsProvider } from './contexts/SettingsContext.tsx';
 
+// Register the service worker for PWA capabilities.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(registration => {
+      console.log('ServiceWorker registration successful with scope: ', registration.scope);
+    }, err => {
+      console.log('ServiceWorker registration failed: ', err);
+    });
+  });
+}
+
 /**
  * The entry point of the React application.
  * It renders the main App component within a StrictMode, BrowserRouter, and SettingsProvider.
