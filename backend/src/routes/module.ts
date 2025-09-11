@@ -156,8 +156,12 @@ router.get('/:id/download', async (req: IAuthRequest, res: Response): Promise<vo
         zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2)), 'Module manifest');
 
         const zipBuffer = zip.toBuffer();
-        const sanitizedTitle = module.title.split(/[^a-z0-9]/i).filter(Boolean).join('_');
+        const sanitizedTitle = module.title
+            .replace(/\s+/g, '') // Remove all spaces
+            .replace(/[^a-z0-9]/gi, ''); // Remove any remaining non-alphanumeric characters
+
         const fileName = `${sanitizedTitle || 'module'}.zipo`;
+        console.log(`[Zipo-Debug] Generated filename for download: "${fileName}"`);
 
         res.set('Content-Type', 'application/zip');
         res.set('Content-Disposition', `attachment; filename="${fileName}"`);
