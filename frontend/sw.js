@@ -57,11 +57,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For all other requests, try cache first, then network.
+  // For all other requests, try cache first, then network, with a fallback for navigation.
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      return cachedResponse || fetch(request).then(networkResponse => {
-          // For non-API GET requests, cache them in the main cache
+      // If we have a cached response, return it.
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      // If not, fetch from the network.
+      return fetch(request).then(networkResponse => {
+          // For non-API GET requests, cache them for future offline use.
           if(request.method === 'GET' && !url.pathname.startsWith('/api/')) {
               return caches.open(CACHE_NAME).then(cache => {
                   cache.put(request, networkResponse.clone());
@@ -69,6 +75,16 @@ self.addEventListener('fetch', (event) => {
               });
           }
           return networkResponse;
+      }).catch(error => {
+        // If the network fetch fails, it's an offline scenario.
+        console.log('Network fetch failed for:', request.url, error);
+        // For navigation requests, serve the main index.html as a fallback.
+        if (request.mode === 'navigate') {
+          console.log('Serving index.html as fallback for navigation.');
+          return caches.match('/index.html');
+        }
+        // For other assets (js, css, images), if they are not in the cache and network fails,
+        // there's nothing to serve. The request will fail.
       });
     })
   );
