@@ -5,6 +5,7 @@ import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { ArrowLeft, Loader2, Play, Pause, RotateCcw, Download } from 'lucide-react';
 import { Stage, Layer, Text as KonvaText, Rect, Arrow, Circle } from 'react-konva';
 import zipoIcon from '../../assets/zipo_white.png';
+import { LocalModule } from '../App';
 
 interface Command {
   command: string;
@@ -12,7 +13,12 @@ interface Command {
   delay?: number;
 }
 
-const PlayModulePage: React.FC = () => {
+interface PlayModulePageProps {
+    isLocal: boolean;
+    localModuleData?: LocalModule | null;
+}
+
+const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleData }) => {
   const [title, setTitle] = useState('');
   const [commandQueue, setCommandQueue] = useState<Command[]>([]);
   const [transcript, setTranscript] = useState<string[]>([]);
@@ -67,8 +73,20 @@ const PlayModulePage: React.FC = () => {
   }, [moduleId, navigate, addToast]);
 
   useEffect(() => {
-    fetchModuleCommands();
-  }, [fetchModuleCommands]);
+    if (isLocal) {
+        if (localModuleData) {
+            setTitle(localModuleData.title);
+            setCommandQueue(localModuleData.canvasState);
+            setTranscript(localModuleData.canvasState.filter(cmd => cmd.command === 'speak').map(cmd => cmd.payload.text));
+            setIsLoading(false);
+        } else {
+            addToast('No local module data found. Redirecting...', 'error');
+            navigate('/app');
+        }
+    } else {
+        fetchModuleCommands();
+    }
+  }, [isLocal, localModuleData, fetchModuleCommands, navigate, addToast]);
 
   
 
@@ -299,7 +317,7 @@ const PlayModulePage: React.FC = () => {
                 </button>
                 <div>
                     <h1 className="text-lg font-bold text-black truncate">{title}</h1>
-                    <p className="text-sm text-gray-500">Module Playback</p>
+                    <p className="text-sm text-gray-500">Module Playback {isLocal && "(Local)"}</p>
                 </div>
             </div>
             <div className="flex items-center gap-2">
@@ -311,10 +329,12 @@ const PlayModulePage: React.FC = () => {
                     <RotateCcw className="w-4 h-4" />
                     <span>Reset</span>
                 </button>
-                <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-black rounded-lg transition-all">
-                    <Download className="w-4 h-4" />
-                    <span>Download</span>
-                </button>
+                {!isLocal && (
+                    <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-black rounded-lg transition-all">
+                        <Download className="w-4 h-4" />
+                        <span>Download</span>
+                    </button>
+                )}
             </div>
         </div>
         <div className="flex-1 flex overflow-hidden">

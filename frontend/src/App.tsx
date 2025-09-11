@@ -36,6 +36,14 @@ interface UploadedFile {
 }
 
 /**
+ * Represents the structure of a locally loaded module from a .zipo file.
+ */
+export interface LocalModule {
+    title: string;
+    canvasState: any[];
+}
+
+/**
  * The main application component.
  * It manages routing, authentication state, and global data fetching.
  */
@@ -44,7 +52,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true); // Manages initial loading state for authentication check.
-  // const [quizFiles, setQuizFiles] = useState<UploadedFile[]>([]); // Stores files selected for quiz generation.
+  const [localModuleData, setLocalModuleData] = useState<LocalModule | null>(null);
   
   const navigate = useNavigate(); // Hook for programmatic navigation.
   const location = useLocation(); // Hook to access the current URL location.
@@ -90,28 +98,6 @@ function App() {
     setIsLoading(false); // Mark loading as complete after the check.
   }, []);
 
-  /**
-   * Effect hook to listen for a custom 'setupQuiz' event.
-   * This event is dispatched from other components (e.g., Dashboard) to initiate quiz setup
-   * with specific uploaded files.
-   */
-  /*
-  useEffect(() => {
-    const handleSetupQuiz = (event: Event) => {
-      const customEvent = event as CustomEvent<UploadedFile[]>;
-      setQuizFiles(customEvent.detail); // Store the files for quiz generation.
-      navigate('/app/quiz/setup'); // Navigate to the quiz setup page.
-    };
-
-    window.addEventListener('setupQuiz', handleSetupQuiz);
-
-    // Cleanup function to remove the event listener when the component unmounts.
-    return () => {
-      window.removeEventListener('setupQuiz', handleSetupQuiz);
-    };
-  }, [navigate]);
-  */
-
   // --- Event Handlers ---
 
   /**
@@ -145,42 +131,6 @@ function App() {
   const handleStartNewSession = () => {
     navigate('/app/new');
   };
-
-  /**
-   * Handles the quiz generation request from the setup page.
-   * Sends the instructions and question count to the backend to generate a quiz.
-   * @param {string} instructions - The user's instructions for the quiz.
-   * @param {number} questionCount - The number of questions to generate.
-   */
-  /*
-  const handleGenerateQuiz = async (instructions: string, questionCount: number) => {
-    const token = localStorage.getItem('token');
-    const fileIds = quizFiles.map(f => f.fileId); // Extract file IDs from the staged quiz files.
-
-    try {
-      const response = await fetch('/api/quiz/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ fileIds, instructions, questionCount }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to generate quiz');
-      }
-
-      const data = await response.json();
-      navigate(`/app/quiz/play/${data.quiz._id}`); // Navigate to the generated quiz page.
-
-    } catch (error) {
-      console.error('Error generating quiz:', error);
-      // Error is typically displayed via a toast notification in the component.
-    }
-  };
-  */
   
   // --- Components ---
 
@@ -191,7 +141,7 @@ function App() {
    */
   const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
     if (!isAuthenticated) {
-      return <Navigate to="/landing" replace />; // Redirect unauthenticated users.
+      return <Navigate to="/landing" replace />;
     }
     return children;
   };
@@ -225,7 +175,7 @@ function App() {
             
             {/* Protected Routes: Require user authentication. */}
             <Route path="/tutorial" element={<ProtectedRoute><TutorialPage /></ProtectedRoute>} />
-            <Route path="/app" element={<ProtectedRoute><Dashboard onStartSession={handleStartNewSession} /></ProtectedRoute>} />
+            <Route path="/app" element={<ProtectedRoute><Dashboard onStartSession={handleStartNewSession} setLocalModuleData={setLocalModuleData} /></ProtectedRoute>} />
             
             {/* Route for existing sessions, dynamically loads ChatPage based on sessionId. */}
             <Route 
@@ -249,11 +199,8 @@ function App() {
 
             <Route path="/app/settings" element={<ProtectedRoute><SettingsPage onLogout={handleLogout} /></ProtectedRoute>} /> {/* Pass handleLogout to SettingsPage */}
             <Route path="/app/generate-module" element={<ProtectedRoute><GenerateModulePage /></ProtectedRoute>} />
-            <Route path="/app/play-module/:moduleId" element={<ProtectedRoute><PlayModulePage /></ProtectedRoute>} />
-            {/*
-            <Route path="/app/quiz/setup" element={<ProtectedRoute><QuizSetupPage files={quizFiles} onGenerateQuiz={handleGenerateQuiz} /></ProtectedRoute>} />
-            <Route path="/app/quiz/play/:quizId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
-            */}
+            <Route path="/app/play-module/:moduleId" element={<ProtectedRoute><PlayModulePage isLocal={false} /></ProtectedRoute>} />
+            <Route path="/app/play-local" element={<ProtectedRoute><PlayModulePage isLocal={true} localModuleData={localModuleData} /></ProtectedRoute>} />
 
             {/* Fallback Route: Redirects to dashboard if authenticated, otherwise to landing. */}
             <Route path="*" element={<Navigate to={isAuthenticated ? "/app" : "/landing"} />} />
