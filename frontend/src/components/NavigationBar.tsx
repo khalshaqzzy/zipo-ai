@@ -4,6 +4,7 @@ import { Plus, MessageCircle, Settings, Clock, LogOut, Home } from 'lucide-react
 import TimeAgo from 'javascript-time-ago';
 import en from 'javascript-time-ago/locale/en';
 import zipoLogo from '../../assets/zipo_black.png';
+import { useOnlineStatus } from '../contexts/OnlineStatusContext';
 
 TimeAgo.addDefaultLocale(en);
 const timeAgo = new TimeAgo('en-US');
@@ -26,6 +27,7 @@ const NavigationBar: React.FC<NavigationBarProps> = ({
   onLogout
 }) => {
   const navigate = useNavigate();
+  const { isOnline } = useOnlineStatus();
 
   return (
     <div className="fixed left-0 top-0 h-screen w-80 bg-white border-r border-gray-200 flex flex-col">
@@ -45,7 +47,8 @@ const NavigationBar: React.FC<NavigationBarProps> = ({
         </button>
         <button
           onClick={onStartSession}
-          className="w-full bg-black hover:bg-gray-800 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200"
+          disabled={!isOnline}
+          className="w-full bg-black hover:bg-gray-800 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus size={20} />
           New Chat

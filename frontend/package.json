@@ -5,15 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && cp sw.js dist/",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/jszip": "^3.4.0",
     "axios": "^1.10.0",
     "d3-force": "^3.0.0",
     "dotenv": "^17.2.0",
     "javascript-time-ago": "^2.5.11",
+    "jszip": "^3.10.1",
     "konva": "^9.3.20",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

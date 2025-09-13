@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { Request } from 'express';
 
 // Define the absolute path for the uploads directory.
 const uploadDir = path.resolve(__dirname, '../../../uploads');
@@ -27,7 +28,7 @@ const storage = multer.diskStorage({
 });
 
 /**
- * Multer middleware instance configured for handling file uploads.
+ * Multer middleware instance configured for handling file uploads for sessions.
  * It expects an array of files from a form field named 'files'.
  * 
  * - `storage`: Uses the disk storage configuration defined above.
@@ -38,3 +39,23 @@ export const upload = multer({
     limits: { files: 5 } // Allow up to 5 files per request.
 }).array('files', 5); // The field name in the form-data should be 'files'.
 
+/**
+ * File filter for .zipo files.
+ */
+const zipoFileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    if (path.extname(file.originalname).toLowerCase() === '.zipo') {
+        cb(null, true);
+    } else {
+        cb(new Error('Only .zipo files are allowed!'));
+    }
+};
+
+/**
+ * Multer middleware instance configured for handling .zipo file uploads.
+ * It expects a single file from a form field named 'zipo_module'.
+ */
+export const uploadZipo = multer({
+    storage: storage,
+    fileFilter: zipoFileFilter,
+    limits: { fileSize: 1024 * 1024 * 50 } // 50MB limit for .zipo files
+}).single('zipo_module');
