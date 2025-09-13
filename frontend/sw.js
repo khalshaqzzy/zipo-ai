@@ -37,9 +37,10 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // For API calls to play modules, use a network-first strategy, falling back to cache.
-  // This ensures the user gets the latest version if online, but can still play offline.
-  if (url.pathname.startsWith('/api/modules/') && url.pathname.endsWith('/play')) {
+  // For the module list and module playback data, use a network-first strategy.
+  // This ensures the user gets the latest data if online, but can still see the list
+  // and play cached modules when offline.
+  if (url.pathname === '/api/modules' || (url.pathname.startsWith('/api/modules/') && url.pathname.endsWith('/play'))) {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
