@@ -57,7 +57,7 @@ function App() {
   
   const navigate = useNavigate(); // Hook for programmatic navigation.
   const location = useLocation(); // Hook to access the current URL location.
-  const { isOnline } = useOnlineStatus();
+  const { renderKey } = useOnlineStatus();
 
   // --- Data Fetching ---
 
@@ -160,9 +160,10 @@ function App() {
 
   return (
     <ToastProvider> {/* Provides toast notifications throughout the app. */}
-      <div key={isOnline ? 'online' : 'offline'} className="min-h-screen bg-white">
+      <div className="min-h-screen bg-white">
         {showNavBar && (
           <NavigationBar
+            key={`nav-${renderKey}`}
             sessions={sessions}
             onStartSession={handleStartNewSession}
             onLogout={handleLogout} // Pass handleLogout to NavigationBar
@@ -177,7 +178,7 @@ function App() {
             
             {/* Protected Routes: Require user authentication. */}
             <Route path="/tutorial" element={<ProtectedRoute><TutorialPage /></ProtectedRoute>} />
-            <Route path="/app" element={<ProtectedRoute><Dashboard onStartSession={handleStartNewSession} setLocalModuleData={setLocalModuleData} /></ProtectedRoute>} />
+            <Route path="/app" element={<ProtectedRoute><Dashboard key={`dash-${renderKey}`} onStartSession={handleStartNewSession} setLocalModuleData={setLocalModuleData} /></ProtectedRoute>} />
             
             {/* Route for existing sessions, dynamically loads ChatPage based on sessionId. */}
             <Route 
