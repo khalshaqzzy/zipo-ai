@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useToast } from '../hooks/useToast';
 import JSZip from 'jszip';
 import { LocalModule } from '../App';
+import { useOnlineStatus } from '../contexts/OnlineStatusContext';
 
 /**
  * Props for the Dashboard component.
@@ -27,6 +28,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartSession, setLocalModuleDat
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const localPlayFileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
+  const { isOnline } = useOnlineStatus();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -143,31 +145,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartSession, setLocalModuleDat
 
           <div className="bg-white rounded-2xl p-8 border border-gray-200 mb-8">
             <h2 className="text-2xl font-bold text-black mb-6">Quick Actions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
               <button
                 onClick={() => onStartSession()}
-                className="bg-black hover:bg-gray-800 text-white font-semibold py-4 px-6 rounded-lg transition-all duration-200"
+                disabled={!isOnline}
+                className="bg-black hover:bg-gray-800 text-white font-semibold py-4 px-6 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Start New Session
               </button>
               <button 
                 onClick={() => navigate('/app/generate-module')}
-                className="bg-gray-100 hover:bg-gray-200 text-black font-semibold py-4 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                disabled={!isOnline}
+                className="bg-gray-100 hover:bg-gray-200 text-black font-semibold py-4 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Zap size={20} />
                 Generate Zipo Module
               </button>
               <button 
                 onClick={handleImportClick}
-                disabled={isImporting}
-                className="bg-gray-100 hover:bg-gray-200 text-black font-semibold py-4 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                disabled={!isOnline || isImporting}
+                className="bg-gray-100 hover:bg-gray-200 text-black font-semibold py-4 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload size={20} />
                 {isImporting ? 'Importing...' : 'Import Zipo Module'}
               </button>
               <button 
                 onClick={handleOfflinePlayClick}
-                className="bg-gray-100 hover:bg-gray-200 text-black font-semibold py-4 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                className={`font-semibold py-4 px-6 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                  !isOnline 
+                    ? 'bg-black text-white animate-pulse shadow-lg' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-black'
+                }`}
               >
                 <WifiOff size={20} />
                 Offline Playback
