@@ -8,33 +8,40 @@ interface OnlineStatusContextType {
 const OnlineStatusContext = createContext<OnlineStatusContextType | undefined>(undefined);
 
 export const OnlineStatusProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine);
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    console.log('[OnlineStatusProvider] Initializing state:', navigator.onLine);
+    return navigator.onLine;
+  });
 
   const reportNetworkError = useCallback(() => {
-    if (isOnline) {
-      console.log('Network error reported, switching to offline mode.');
+    if (isOnline) { // Only update if the state is changing
+      console.log('[OnlineStatusProvider] Network error reported by app, forcing OFFLINE state.');
       setIsOnline(false);
     }
   }, [isOnline]);
 
   useEffect(() => {
     const handleOnline = () => {
-      console.log('Browser reported online.');
+      console.log('[OnlineStatusProvider] "online" event fired by browser. Setting state to ONLINE.');
       setIsOnline(true);
     }
     const handleOffline = () => {
-      console.log('Browser reported offline.');
+      console.log('[OnlineStatusProvider] "offline" event fired by browser. Setting state to OFFLINE.');
       setIsOnline(false);
     }
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    console.log('[OnlineStatusProvider] Event listeners attached.');
 
     return () => {
+      console.log('[OnlineStatusProvider] Event listeners removed.');
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  console.log('[OnlineStatusProvider] Rendering with isOnline =', isOnline);
 
   return (
     <OnlineStatusContext.Provider value={{ isOnline, reportNetworkError }}>
