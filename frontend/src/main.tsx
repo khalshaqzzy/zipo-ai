@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.tsx';
 import './index.css';
 import { SettingsProvider } from './contexts/SettingsContext.tsx';
+import { OnlineStatusProvider } from './contexts/OnlineStatusContext.tsx';
 
 // Register the service worker for PWA capabilities.
 if ('serviceWorker' in navigator) {
@@ -23,8 +24,10 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode> {/* Enables strict checks for potential problems in an application. */}
     <BrowserRouter> {/* Provides routing capabilities to the application. */}
-      <SettingsProvider> {/* Provides global settings (e.g., language) to all components. */}
-        <App /> {/* The root component of the application. */}
+      <SettingsProvider>
+        <OnlineStatusProvider>
+          <App />
+        </OnlineStatusProvider>
       </SettingsProvider>
     </BrowserRouter>
   </StrictMode>
