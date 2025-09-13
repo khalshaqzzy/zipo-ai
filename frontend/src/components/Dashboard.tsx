@@ -28,7 +28,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartSession, setLocalModuleDat
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const localPlayFileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
-  const { isOnline } = useOnlineStatus();
+  const { isOnline, reportNetworkError } = useOnlineStatus();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -43,14 +43,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartSession, setLocalModuleDat
         if (response.ok) {
           const data = await response.json();
           setUsername(data.username);
+        } else {
+          reportNetworkError();
         }
       } catch (error) {
         console.error('Failed to fetch username:', error);
+        reportNetworkError();
       }
     };
 
     fetchProfile();
-  }, []);
+  }, [reportNetworkError]);
 
   const handleImportClick = () => {
     importFileInputRef.current?.click();

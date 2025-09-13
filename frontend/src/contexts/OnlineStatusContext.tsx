@@ -1,7 +1,8 @@
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect, useCallback } from 'react';
 
 interface OnlineStatusContextType {
   isOnline: boolean;
+  reportNetworkError: () => void;
 }
 
 const OnlineStatusContext = createContext<OnlineStatusContextType | undefined>(undefined);
@@ -9,9 +10,22 @@ const OnlineStatusContext = createContext<OnlineStatusContextType | undefined>(u
 export const OnlineStatusProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine);
 
+  const reportNetworkError = useCallback(() => {
+    if (isOnline) {
+      console.log('Network error reported, switching to offline mode.');
+      setIsOnline(false);
+    }
+  }, [isOnline]);
+
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      console.log('Browser reported online.');
+      setIsOnline(true);
+    }
+    const handleOffline = () => {
+      console.log('Browser reported offline.');
+      setIsOnline(false);
+    }
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -23,7 +37,7 @@ export const OnlineStatusProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, []);
 
   return (
-    <OnlineStatusContext.Provider value={{ isOnline }}>
+    <OnlineStatusContext.Provider value={{ isOnline, reportNetworkError }}>
       {children}
     </OnlineStatusContext.Provider>
   );

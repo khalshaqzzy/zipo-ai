@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Play, Zap } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
+import { useOnlineStatus } from '../contexts/OnlineStatusContext';
 
 interface IModule {
     _id: string;
@@ -15,6 +16,7 @@ const ModuleList: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { reportNetworkError } = useOnlineStatus();
 
     useEffect(() => {
         const fetchModules = async () => {
@@ -24,17 +26,18 @@ const ModuleList: React.FC = () => {
                 const response = await fetch('/api/modules', {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
-                if (!response.ok) throw new Error('Failed to fetch modules.');
+                if (!response.ok) throw new Error('Failed to fetch modules. You might be offline.');
                 const data = await response.json();
                 setModules(data);
             } catch (error) {
-                addToast((error as Error).message, 'error');
+                addToast('Could not connect to server. Displaying offline features.', 'info');
+                reportNetworkError();
             } finally {
                 setIsLoading(false);
             }
         };
         fetchModules();
-    }, [addToast]);
+    }, [addToast, reportNetworkError]);
 
     const getLengthBadgeColor = (length: 'Short' | 'Medium' | 'Long') => {
         switch (length) {
