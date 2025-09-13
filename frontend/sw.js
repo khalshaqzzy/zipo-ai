@@ -1,92 +1,102 @@
-// frontend/sw.js
-
 const API_CACHE_NAME = 'zipo-api-cache-v1';
 const CACHE_NAME = 'zipo-cache-v1';
+const APP_SHELL_URLS = [
+    '/',
+    '/index.html',
+    '/manifest.json',
+    '/assets/zipo_white.png',
+    '/assets/zipo_black.png'
+];
 
+// Install: Caches the app shell.
 self.addEventListener('install', (event) => {
+  console.log('[SW] Install event');
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // Cache the app shell. This is a minimal set of files.
-      // In a real app, this would be populated by the build process.
-      return cache.addAll([
-        '/',
-        '/index.html',
-        '/manifest.json',
-        '/assets/zipo_white.png',
-        '/assets/zipo_black.png'
-      ]);
+      console.log('[SW] Caching app shell');
+      return cache.addAll(APP_SHELL_URLS);
     })
   );
+  // Force the waiting service worker to become the active service worker.
+  self.skipWaiting();
 });
 
+// Activate: Cleans up old caches and takes control of clients.
 self.addEventListener('activate', (event) => {
+  console.log('[SW] Activate event');
   const cacheWhitelist = [CACHE_NAME, API_CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
+            console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      // Take control of all open clients without waiting for a reload.
+      return self.clients.claim();
     })
   );
 });
 
+// Fetch: Serves requests from cache or network.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // For the module list and module playback data, use a network-first strategy.
-  // This ensures the user gets the latest data if online, but can still see the list
-  // and play cached modules when offline.
-  if (url.pathname === '/api/modules' || (url.pathname.startsWith('/api/modules/') && url.pathname.endsWith('/play'))) {
+  // Ignore non-GET requests
+  if (request.method !== 'GET') {
+    return;
+  }
+
+  // For API calls (module list, sessions, and playback), use a network-first strategy.
+  if (url.pathname.startsWith('/api/modules') || url.pathname.startsWith('/api/sessions')) {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
+          // If fetch is successful, cache the response and return it.
           return caches.open(API_CACHE_NAME).then((cache) => {
-            console.log('Caching new API response:', request.url);
             cache.put(request, networkResponse.clone());
             return networkResponse;
           });
         })
         .catch(() => {
-          console.log('Serving from API cache (network failed):', request.url);
-          return caches.match(request);
+          // If fetch fails (offline), try to serve from the cache.
+          return caches.match(request).then(cachedResponse => {
+            return cachedResponse || Response.error();
+          });
         })
     );
     return;
   }
 
-  // For all other requests, try cache first, then network, with a fallback for navigation.
+  // For all other GET requests (app shell, assets), use a cache-first strategy.
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      // If we have a cached response, return it.
+      // If in cache, return it.
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      // If not, fetch from the network.
+      // If not in cache, fetch from network, cache it, and then return it.
       return fetch(request).then(networkResponse => {
-          // For non-API GET requests, cache them for future offline use.
-          if(request.method === 'GET' && !url.pathname.startsWith('/api/')) {
-              return caches.open(CACHE_NAME).then(cache => {
-                  cache.put(request, networkResponse.clone());
-                  return networkResponse;
-              });
-          }
+        // Check if we received a valid response
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
           return networkResponse;
-      }).catch(error => {
-        // If the network fetch fails, it's an offline scenario.
-        console.log('Network fetch failed for:', request.url, error);
-        // For navigation requests, serve the main index.html as a fallback.
+        }
+
+        return caches.open(CACHE_NAME).then(cache => {
+          cache.put(request, networkResponse.clone());
+          return networkResponse;
+        });
+      }).catch(() => {
+        // If network fails and it's a navigation request, return the offline page.
         if (request.mode === 'navigate') {
-          console.log('Serving index.html as fallback for navigation.');
           return caches.match('/index.html');
         }
-        // For other assets (js, css, images), if they are not in the cache and network fails,
-        // there's nothing to serve. The request will fail.
       });
     })
   );
