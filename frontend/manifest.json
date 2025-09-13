@@ -3,12 +3,12 @@
   "name": "Zipo - AI Learning Platform",
   "icons": [
     {
-      "src": "assets/zipo_white.png",
+      "src": "/assets/zipo_white.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "assets/zipo_white.png",
+      "src": "/assets/zipo_white.png",
       "type": "image/png",
       "sizes": "512x512"
     }
