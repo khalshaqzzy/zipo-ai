@@ -30,8 +30,25 @@ const ModuleList: React.FC = () => {
                 const data = await response.json();
                 setModules(data);
             } catch (error) {
-                addToast('Could not connect to server. Displaying offline features.', 'info');
-                reportNetworkError();
+                console.error("Fetch modules failed, attempting to read from cache.", error);
+                reportNetworkError(); // Set UI to offline mode
+
+                // The name must match the one in sw.js
+                const API_CACHE_NAME = 'zipo-api-cache-v1';
+                caches.open(API_CACHE_NAME).then(cache => {
+                    // This URL must exactly match the fetch request
+                    cache.match('/api/modules').then(cachedResponse => {
+                        if (cachedResponse) {
+                            addToast('Offline: Loaded module list from cache.', 'info');
+                            cachedResponse.json().then(data => {
+                                setModules(data);
+                            });
+                        } else {
+                            addToast('You are offline and no modules were found in the cache.', 'info');
+                            setModules([]);
+                        }
+                    });
+                });
             } finally {
                 setIsLoading(false);
             }
