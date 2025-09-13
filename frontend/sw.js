@@ -12,7 +12,8 @@ self.addEventListener('install', (event) => {
         '/',
         '/index.html',
         '/manifest.json',
-        '/assets/zipo_white.png'
+        '/assets/zipo_white.png',
+        '/assets/zipo_black.png'
       ]);
     })
   );
