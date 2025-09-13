@@ -97,6 +97,9 @@ self.addEventListener('fetch', (event) => {
         if (request.mode === 'navigate') {
           return caches.match('/index.html');
         }
+        // For other assets that aren't in the cache and fail to fetch,
+        // return a network error. This prevents a TypeError.
+        return Response.error();
       });
     })
   );
