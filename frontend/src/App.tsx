@@ -15,6 +15,7 @@ import QuizSetupPage from './components/QuizSetupPage';
 import QuizPage from './components/QuizPage';
 */
 import { ToastProvider } from './contexts/ToastContext';
+import { useOnlineStatus } from './contexts/OnlineStatusContext';
 
 // --- Type Definitions ---
 
@@ -56,6 +57,7 @@ function App() {
   
   const navigate = useNavigate(); // Hook for programmatic navigation.
   const location = useLocation(); // Hook to access the current URL location.
+  const { isOnline } = useOnlineStatus();
 
   // --- Data Fetching ---
 
@@ -158,7 +160,7 @@ function App() {
 
   return (
     <ToastProvider> {/* Provides toast notifications throughout the app. */}
-      <div className="min-h-screen bg-white">
+      <div key={isOnline ? 'online' : 'offline'} className="min-h-screen bg-white">
         {showNavBar && (
           <NavigationBar
             sessions={sessions}
