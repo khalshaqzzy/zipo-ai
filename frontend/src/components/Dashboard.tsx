@@ -182,6 +182,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartSession, setLocalModuleDat
               </button>
             </div>
           </div>
+
+          {!isOnline && (
+            <div className="mt-8 p-6 bg-gray-100 border border-gray-200 rounded-2xl flex items-center gap-4 animate-in fade-in duration-500">
+              <WifiOff className="w-8 h-8 text-gray-500 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-black text-lg">You are currently offline</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Online features like generating new sessions or modules are disabled. You can still use 'Offline Playback' to open downloaded `.zipo` files.
+                </p>
+              </div>
+            </div>
+          )}
+
           <ModuleList />
         </div>
       </div>
