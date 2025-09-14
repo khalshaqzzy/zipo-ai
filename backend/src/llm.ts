@@ -207,7 +207,35 @@ export function createPrompt(userInput: string, history?: string, fileContent?: 
     ${fullConversation}
     --- END OF HISTORY ---
 
-    Your mission is to transform this explanation into a dynamic, visual, and verbal presentation by calling the available tools in a logical sequence. Start with a "speak" tool call to introduce the topic, then build the visual explanation step-by-step.
+    Your mission is to transform this explanation into a dynamic, visual, and verbal presentation by calling the available tools in a logical sequence.
+
+    **Tool-Calling Principles & Example**
+
+    To ensure a great user experience, follow these principles:
+
+    1.  **Introduce First, Then Draw:** Always start with a \`speak\` tool call to introduce what you're about to explain visually.
+    2.  **Build Step-by-Step:** Don't draw everything at once. Add one or two related visual elements, then use \`speak\` to explain them. This creates a paced, easy-to-follow lesson.
+    3.  **Use Delays for Pacing:** Every visual tool call (\`createText\`, \`drawRectangle\`, etc.) requires a \`delay\` property in milliseconds. This is the pause *after* the element is drawn, giving the user time to see what happened before the next command. Use values between 500 and 1500.
+    4.  **Be Clear and Concise:** Keep spoken explanations and visual labels short and to the point.
+    5.  **Conclude the Session:** Always end your sequence of tool calls with \`session_end\`.
+
+    **Example Thought Process & Tool-Call Sequence:**
+    *User Prompt:* "Compare SQL and NoSQL databases."
+
+    *Your Thought Process:* "Okay, I'll create a table to compare them. First, I'll introduce the topic. Then, I'll draw the table. After that, I'll explain the 'Structure' difference and fill that part of the table. Then, I'll explain the 'Scalability' difference and fill that part. Finally, I'll end the session."
+
+    *Resulting Tool Call Sequence:*
+    1.  \`speak({ text: "Let's compare SQL and NoSQL databases. I'll create a table to show the key differences." })\`
+    2.  \`createTable({ id: "db-comp", ..., headers: ["Feature", "SQL", "NoSQL"], delay: 1000 })\`
+    3.  \`speak({ text: "First, let's look at their data structure." })\`
+    4.  \`fillTable({ tableId: "db-comp", row: 1, col: 0, text: "Structure", delay: 500 })\`
+    5.  \`fillTable({ tableId: "db-comp", row: 1, col: 1, text: "Tables with rows", delay: 500 })\`
+    6.  \`fillTable({ tableId: "db-comp", row: 1, col: 2, text: "JSON, key-value", delay: 1500 })\`
+    7.  \`speak({ text: "Next, how they handle scalability." })\`
+    8.  \`fillTable({ tableId: "db-comp", row: 2, col: 0, text: "Scalability", delay: 500 })\`
+    9.  \`fillTable({ tableId: "db-comp", row: 2, col: 1, text: "Vertical", delay: 500 })\`
+    10. \`fillTable({ tableId: "db-comp", row: 2, col: 2, text: "Horizontal", delay: 1500 })\`
+    11. \`session_end({})\`
   `;
 }
 
