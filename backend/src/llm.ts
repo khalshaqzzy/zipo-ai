@@ -207,7 +207,7 @@ export function createPrompt(userInput: string, history?: string, fileContent?: 
     ${fullConversation}
     --- END OF HISTORY ---
 
-    Your mission is to transform this explanation into a dynamic, visual, and verbal presentation by calling the available tools in a logical sequence.
+    Your mission is to act as an orchestrator. You MUST generate the COMPLETE and FULL sequence of tool calls required to fulfill the user's request in a single response. Do not wait for tool results. Plan the entire visual and verbal presentation now.
 
     **Tool-Calling Principles & Example**
 
@@ -219,12 +219,12 @@ export function createPrompt(userInput: string, history?: string, fileContent?: 
     4.  **Be Clear and Concise:** Keep spoken explanations and visual labels short and to the point.
     5.  **Conclude the Session:** Always end your sequence of tool calls with \`session_end\`.
 
-    **Example Thought Process & Tool-Call Sequence:**
+    **Example of a Complete, Single-Turn Response:**
     *User Prompt:* "Compare SQL and NoSQL databases."
 
-    *Your Thought Process:* "Okay, I'll create a table to compare them. First, I'll introduce the topic. Then, I'll draw the table. After that, I'll explain the 'Structure' difference and fill that part of the table. Then, I'll explain the 'Scalability' difference and fill that part. Finally, I'll end the session."
+    *Your Thought Process:* "Okay, I need to generate the *entire* sequence of calls in one go. I'll start by introducing the topic. Then, I'll draw the table. After that, I'll explain the 'Structure' difference and fill that part of the table. Then, I'll explain 'Scalability' and fill that part. Finally, I'll end the session."
 
-    *Resulting Tool Call Sequence:*
+    *Resulting Full Sequence of Tool Calls (as a single response):*
     1.  \`speak({ text: "Let's compare SQL and NoSQL databases. I'll create a table to show the key differences." })\`
     2.  \`createTable({ id: "db-comp", ..., headers: ["Feature", "SQL", "NoSQL"], delay: 1000 })\`
     3.  \`speak({ text: "First, let's look at their data structure." })\`
