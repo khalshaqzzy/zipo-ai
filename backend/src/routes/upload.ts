@@ -4,6 +4,9 @@ import { authMiddleware, IAuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/multer';
 import { File } from '../models/File';
 import { Message } from '../models/Message';
+import { extractTextFromFile } from '../fileprocessing';
+import { chunkText, generateEmbeddings, storeEmbeddings } from '../services/ragService';
+
 
 const router = express.Router();
 const MAX_SESSION_FILES = 5;
@@ -53,6 +56,22 @@ router.post('/', authMiddleware, (req: IAuthRequest, res) => {
           userId: req.userId,
         });
         await newFile.save();
+
+        // --- RAG Processing ---
+        try {
+          console.log(`[UploadRoute] Starting RAG processing for ${file.originalname}...`);
+          const textContent = await extractTextFromFile(file.path, file.mimetype);
+          if (textContent) {
+            const chunks = chunkText(textContent);
+            const vectors = await generateEmbeddings(chunks);
+            storeEmbeddings(newFile._id.toString(), chunks, vectors);
+          }
+        } catch (ragError) {
+          // Log the error but don't fail the upload request itself
+          console.error(`[UploadRoute] RAG processing failed for file ${newFile._id}:`, ragError);
+        }
+        // --- End RAG Processing ---
+
         return {
           fileId: newFile._id,
           filename: newFile.originalFilename,

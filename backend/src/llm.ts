@@ -10,13 +10,153 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey);
-export const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-export function formatHistory(messages: IMessage[]): string {
-  if (!messages || messages.length === 0) {
-    return '';
+const canvasTools = [
+  {
+    "name": "speak",
+    "description": "Provides the verbal part of the explanation. Should be called before visual elements to introduce them.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "text": {
+          "type": "STRING",
+          "description": "The text to be spoken by the AI tutor."
+        }
+      },
+      "required": ["text"]
+    }
+  },
+  {
+    "name": "createText",
+    "description": "Renders text on the canvas, like labels or titles.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "x": { "type": "NUMBER", "description": "The x-coordinate." },
+        "y": { "type": "NUMBER", "description": "The y-coordinate." },
+        "text": { "type": "STRING", "description": "The text content to display." },
+        "fontSize": { "type": "NUMBER", "description": "The font size of the text." },
+        "color": { "type": "STRING", "description": "The color of the text (e.g., '#RRGGBB')." },
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["x", "y", "text", "delay"]
+    }
+  },
+  {
+    "name": "drawRectangle",
+    "description": "Draws a rectangle on the canvas.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "x": { "type": "NUMBER" },
+        "y": { "type": "NUMBER" },
+        "width": { "type": "NUMBER" },
+        "height": { "type": "NUMBER" },
+        "color": { "type": "STRING" },
+        "label": { "type": "STRING", "description": "A label to display inside the rectangle." },
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["x", "y", "width", "height", "color", "delay"]
+    }
+  },
+  {
+    "name": "drawCircle",
+    "description": "Draws a circle on the canvas.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "x": { "type": "NUMBER" },
+        "y": { "type": "NUMBER" },
+        "radius": { "type": "NUMBER" },
+        "color": { "type": "STRING" },
+        "label": { "type": "STRING", "description": "A label for the circle." },
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["x", "y", "radius", "color", "delay"]
+    }
+  },
+  {
+    "name": "drawArrow",
+    "description": "Draws an arrow to connect elements.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "points": {
+          "type": "ARRAY",
+          "description": "An array of coordinates [x1, y1, x2, y2, ...].",
+          "items": { "type": "NUMBER" }
+        },
+        "color": { "type": "STRING" },
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["points", "color", "delay"]
+    }
+  },
+  {
+    "name": "createTable",
+    "description": "Draws the structure of a table.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "id": { "type": "STRING", "description": "A unique identifier for the table." },
+        "x": { "type": "NUMBER" },
+        "y": { "type": "NUMBER" },
+        "rows": { "type": "NUMBER" },
+        "cols": { "type": "NUMBER" },
+        "colWidths": { "type": "ARRAY", "items": { "type": "NUMBER" } },
+        "rowHeight": { "type": "NUMBER" },
+        "headers": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["id", "x", "y", "rows", "cols", "colWidths", "rowHeight", "headers", "delay"]
+    }
+  },
+  {
+    "name": "fillTable",
+    "description": "Fills a specific cell in a pre-drawn table.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "tableId": { "type": "STRING", "description": "The ID of the target table." },
+        "row": { "type": "NUMBER", "description": "The 0-indexed row number." },
+        "col": { "type": "NUMBER", "description": "The 0-indexed column number." },
+        "text": { "type": "STRING", "description": "The content to fill in the cell." },
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["tableId", "row", "col", "text", "delay"]
+    }
+  },
+  {
+    "name": "clearCanvas",
+    "description": "Clears all elements from the canvas.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+      },
+      "required": ["delay"]
+    }
+  },
+  {
+    "name": "session_end",
+    "description": "Signals that the presentation is complete. Must be the last tool called.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {},
+      "required": []
+    }
   }
-  return messages.map(message => {
+];
+
+export const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+export const generativeModelTools = genAI.getGenerativeModel({ 
+  model: "gemini-2.5-flash",
+  tools: { functionDeclarations: canvasTools },
+});
+
+
+export function formatHistory(messages: IMessage[], summary?: string): string {
+  const recentHistory = messages.map(message => {
     if (message.sender === 'user') {
       return `User: ${message.text}`;
     } else {
@@ -31,6 +171,13 @@ export function formatHistory(messages: IMessage[]): string {
       }
     }
   }).join('\n');
+
+  if (summary) {
+    console.log("[LLM] INFO: Formatting history with summary.");
+    return `This is a summary of the conversation so far:\n${summary}\n\nHere is the most recent part of the conversation:\n${recentHistory}`;
+  }
+
+  return recentHistory;
 }
 
 export function createPrompt(userInput: string, history?: string, fileContent?: string): string {
@@ -60,109 +207,7 @@ export function createPrompt(userInput: string, history?: string, fileContent?: 
     ${fullConversation}
     --- END OF HISTORY ---
 
-    Your mission is to transform this explanation into a dynamic, visual, and verbal presentation.
-    You must respond with a JSON array of command objects. Each object represents a single action in the presentation.
-
-    **Core Principles:**
-    1.  **Verbal First:** Start with a "speak" command to introduce the topic.
-    2.  **Build Visually:** Gradually build the diagram on the canvas. Add an element, then explain it with a "speak" command.
-    3.  **Pacing is Key:** Add a "delay" property to every command object **except for "speak"**. This is the time in milliseconds to wait *after* the command is executed. Use shorter delays (e.g., 500-1500ms) for drawing commands.
-    4.  **Be Clear:** Keep explanations and visual labels concise.
-    5.  **JSON Only:** Your entire output must be a single, valid JSON array.
-    6.  **End Session:** Conclude the array with a 'session_end' command.
-
-    **Available Commands:**
-
-        1.  **\`speak\`**: Provides the verbal part of the explanation.
-        - \`payload\`: { "text": "Your explanation for the current step." }
-
-    2.  **\`createText\`**: Renders text on the canvas.
-        - \`payload\`: { "x": <number>, "y": <number>, "text": "Label or title", "fontSize": <number>, "color": "<string>" }
-        - \`delay\`: <milliseconds>
-
-    3.  **\`drawRectangle\`**: Draws a rectangle.
-        - \`payload\`: { "x": <number>, "y": <number>, "width": <number>, "height": <number>, "color": "<string>", "label": "<string>" }
-        - \`delay\`: <milliseconds>
-
-    4.  **\`drawCircle\`**: Draws a circle.
-        - \`payload\`: { "x": <number>, "y": <number>, "radius": <number>, "color": "<string>", "label": "<string>" }
-        - \`delay\`: <milliseconds>
-
-    5.  **\`drawArrow\`**: Draws an arrow to connect elements.
-        - \`payload\`: { "points": [<x1>, <y1>, <x2>, <y2>], "color": "<string>" }
-        - \`delay\`: <milliseconds>
-
-    6.  **\`createTable\`**: Draws the structure of a table.
-        - \`payload\`: { "id": "<string>", "x": <number>, "y": <number>, "rows": <number>, "cols": <number>, "colWidths": [<number>], "rowHeight": <number>, "headers": ["<string>"] }
-        - \`delay\`: <milliseconds>
-
-    7.  **\`fillTable\`**: Fills a specific cell in a pre-drawn table. NOTE: FOR FILLING A CELL WITH MEDIUM TO LONG TEXTS CONSIDER ADDING \n TO PREVENT CELL OVERFLOW. \n  DOES NOT NEED TO BE AT THE END OF A SENTENCE. INSERT \n EVERY 3-4 WORDS
-        - \`payload\`: { "tableId": "<string>", "row": <number>, "col": <number>, "text": "Content" }
-        - \`delay\`: <milliseconds>
-
-    8.  **\`clearCanvas\`**: Clears all elements from the canvas.
-        - \`payload\`: {}
-        - \`delay\`: <milliseconds>
-
-    9.  **\`session_end\`**: Signals that the presentation is complete. Must be the last command.
-        - \`payload\`: {}
-        - \`delay\`: 0
-
-    **Example Workflow for "Compare SQL and NoSQL databases":**
-    [
-      {
-        "command": "speak",
-        "payload": { "text": "Let's compare SQL and NoSQL databases. I'll create a table to show the key differences." }
-      },
-      {
-        "command": "createTable",
-        "payload": { "id": "db-comparison", "x": 50, "y": 50, "rows": 3, "cols": 3, "colWidths": [200, 300, 300], "rowHeight": 40, "headers": ["Feature", "SQL", "NoSQL"] },
-        "delay": 1000
-      },
-      {
-        "command": "speak",
-        "payload": { "text": "First, let's look at their data structure." }
-      },
-      {
-        "command": "fillTable",
-        "payload": { "tableId": "db-comparison", "row": 1, "col": 0, "text": "Structure" },
-        "delay": 500
-      },
-      {
-        "command": "fillTable",
-        "payload": { "tableId": "db-comparison", "row": 1, "col": 1, "text": "Tables with rows" },
-        "delay": 500
-      },
-      {
-        "command": "fillTable",
-        "payload": { "tableId": "db-comparison", "row": 1, "col": 2, "text": "JSON, key-value" },
-        "delay": 1500
-      },
-      {
-        "command": "speak",
-        "payload": { "text": "Next, how they handle scalability." }
-      },
-      {
-        "command": "fillTable",
-        "payload": { "tableId": "db-comparison", "row": 2, "col": 0, "text": "Scalability" },
-        "delay": 500
-      },
-      {
-        "command": "fillTable",
-        "payload": { "tableId": "db-comparison", "row": 2, "col": 1, "text": "Vertical" },
-        "delay": 500
-      },
-      {
-        "command": "fillTable",
-        "payload": { "tableId": "db-comparison", "row": 2, "col": 2, "text": "Horizontal" },
-        "delay": 1500
-      },
-      {
-        "command": "session_end",
-        "payload": {},
-        "delay": 0
-      }
-    ]
+    Your mission is to transform this explanation into a dynamic, visual, and verbal presentation by calling the available tools in a logical sequence. Start with a "speak" tool call to introduce the topic, then build the visual explanation step-by-step.
   `;
 }
 

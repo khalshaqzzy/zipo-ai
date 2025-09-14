@@ -19,12 +19,15 @@ import { Message, IMessage } from './models/Message';
 import { File } from './models/File';
 
 // Import services and utilities
-import { generateContentWithHistory, formatHistory, generativeModel } from './llm';
+import { createPrompt, formatHistory, generativeModel, generativeModelTools } from './llm';
 import { extractTextFromFile } from './fileprocessing';
 import { synthesizeSpeech } from './services/ttsService';
 import { createSpeechStream } from './services/sttService';
 import { processUserUtterance } from './services/voiceAgentService';
+import { retrieveRelevantChunks } from './services/ragService';
 import { generateModule } from './services/moduleService';
+import { summarizeConversation } from './services/memoryService';
+
 
 dotenv.config();
 
@@ -159,23 +162,12 @@ sessionNsp.on('connection', (socket: Socket) => {
             let aggregatedFileContent = '';
             let history: string | undefined = undefined;
 
-            // If file IDs are provided, aggregate their content.
+            // If file IDs are provided, retrieve relevant chunks using RAG
             if (fileIds && fileIds.length > 0) {
-                console.log(`[Socket] INFO: Processing ${fileIds.length} file(s).`);
+                console.log(`[Socket] INFO: Retrieving relevant chunks for ${fileIds.length} file(s).`);
                 const validFileIds = fileIds.filter(id => isValidObjectId(id));
-                const files = await File.find({ _id: { $in: validFileIds }, userId: userId });
-
-                if (files.length !== validFileIds.length) {
-                    throw new Error('File mismatch or access denied.');
-                }
-
-                const contentPromises = files.map(file =>
-                    extractTextFromFile(file.path, file.mimetype).then(content =>
-                        `--- START OF FILE: ${file.originalFilename} ---\n${content}\n--- END OF FILE: ${file.originalFilename} ---`
-                    )
-                );
-                aggregatedFileContent = (await Promise.all(contentPromises)).join('\n\n');
-                console.log('[Socket] INFO: File content aggregated.');
+                aggregatedFileContent = await retrieveRelevantChunks(promptText, validFileIds);
+                console.log('[Socket] INFO: Relevant file content retrieved via RAG.');
             }
 
             // Handle new or existing sessions.
@@ -194,7 +186,7 @@ sessionNsp.on('connection', (socket: Socket) => {
                 currentSession = await Session.findOne({ _id: sessionId, userId: userId });
                 if (currentSession) {
                     const previousMessages = await Message.find({ sessionId: currentSession._id }).sort({ createdAt: -1 }).limit(5);
-                    history = formatHistory(previousMessages.reverse());
+                    history = formatHistory(previousMessages.reverse(), currentSession.summary);
                     console.log('[Socket] INFO: Session history formatted.');
                 }
             }
@@ -206,26 +198,41 @@ sessionNsp.on('connection', (socket: Socket) => {
             await userMessage.save();
             console.log('[Socket] INFO: User message saved.');
 
-            // Generate the main AI response.
-            console.log('[Socket] INFO: Generating content from LLM...');
-            const rawText = await generateContentWithHistory(promptText, history, aggregatedFileContent);
-            if (!rawText) throw new Error("LLM response is empty or invalid.");
-            console.log('[Socket] INFO: Raw response received from LLM.');
-
-            // Parse the command stream from the LLM response.
-            let commandStream: Command[];
-            try {
-                const jsonMatch = rawText.match(/\u005B[^]*\u005D/);
-                if (!jsonMatch) throw new Error("No valid JSON array found in LLM response.");
-                commandStream = JSON.parse(jsonMatch[0]);
-                if (!Array.isArray(commandStream)) throw new Error("LLM response was not a JSON array.");
-                console.log(`[Socket] SUCCESS: Parsed ${commandStream.length} commands from LLM response.`);
-            } catch (jsonError) {
-                console.error('[Socket] FATAL: Error parsing LLM response as JSON:', jsonError);
-                const fallbackCommands = [{ command: 'speak', payload: { text: "I seem to be having trouble formatting my thoughts. Please try again." } }];
-                await orchestrateAndEmitCommands(fallbackCommands, socket, currentSession._id.toString(), languageCode);
-                return;
+            // Check if conversation needs summarization (non-blocking)
+            const messageCount = await Message.countDocuments({ sessionId: currentSession._id });
+            if (messageCount > 0 && messageCount % 10 === 0) {
+                console.log(`[Socket] INFO: Reached ${messageCount} messages. Triggering background summarization.`);
+                Message.find({ sessionId: currentSession._id }).sort({ createdAt: 1 }).then(messages => {
+                    summarizeConversation(messages).then(summary => {
+                        if (summary) {
+                            currentSession.summary = summary;
+                            currentSession.save().then(() => {
+                                console.log(`[Socket] INFO: Summary saved for session ${currentSession._id}`);
+                            }); // Save the new summary
+                        }
+                    });
+                });
             }
+
+            // Generate the main AI response using Function Calling.
+            console.log('[Socket] INFO: Generating content from LLM with tools...');
+            const prompt = createPrompt(promptText, history, aggregatedFileContent);
+            const result = await generativeModelTools.generateContent(prompt);
+            const response = result.response;
+
+            const calls = response.functionCalls();
+            if (!calls) {
+                throw new Error("LLM response did not contain function calls.");
+            }
+            console.log(`[Socket] DEBUG: Raw function calls from LLM:`, JSON.stringify(calls, null, 2));
+
+            console.log(`[Socket] SUCCESS: Received ${calls.length} function calls from LLM.`);
+
+            // Transform function calls into the command stream format for the frontend
+            const commandStream: Command[] = calls.map(call => ({
+                command: call.name,
+                payload: call.args
+            }));
             
             currentSession.updatedAt = new Date();
             await currentSession.save();
@@ -293,13 +300,10 @@ liveConversationNsp.on('connection', (socket: Socket) => {
                     // Fetch full session context for the voice agent.
                     console.log('[Live] INFO: Fetching session context to generate AI response.');
                     const sessionMessages = await Message.find({ sessionId: data.sessionId }).sort({ createdAt: 1 });
-                    const files = await File.find({ _id: { $in: sessionMessages.flatMap(m => m.fileIds || []) } });
-                    const aggregatedFileContent = (await Promise.all(files.map(file => 
-                        extractTextFromFile(file.path, file.mimetype).then(content => 
-                            `--- START OF FILE: ${file.originalFilename} ---\n${content}\n--- END OF FILE: ${file.originalFilename} ---`
-                        )
-                    ))).join('\n\n');
-                    console.log(`[Live] INFO: Found ${files.length} associated files for context.`);
+                    const fileIds = sessionMessages.flatMap(m => m.fileIds || []);
+                    const validFileIds = fileIds.map(id => id.toString()).filter(id => isValidObjectId(id));
+                    const aggregatedFileContent = await retrieveRelevantChunks(transcript, validFileIds);
+                    console.log(`[Live] INFO: Retrieved relevant chunks from ${validFileIds.length} files for context.`);
 
                     // Get the agent's decision.
                     console.log('[Live] INFO: Calling Voice Agent to process utterance.');
