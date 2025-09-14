@@ -64,7 +64,7 @@ router.post('/', authMiddleware, (req: IAuthRequest, res) => {
           if (textContent) {
             const chunks = chunkText(textContent);
             const vectors = await generateEmbeddings(chunks);
-            storeEmbeddings(newFile._id.toString(), chunks, vectors);
+            storeEmbeddings((newFile._id as any).toString(), chunks, vectors);
           }
         } catch (ragError) {
           // Log the error but don't fail the upload request itself

@@ -1,4 +1,4 @@
-import { generativeModel } from '../llm';
+import { generativeModel, genAI } from '../llm';
 
 // Simple text chunking function
 export const chunkText = (text: string, chunkSize: number = 500, overlap: number = 50): string[] => {
@@ -15,11 +15,11 @@ export const chunkText = (text: string, chunkSize: number = 500, overlap: number
 // Function to generate embeddings for a batch of text chunks
 export const generateEmbeddings = async (chunks: string[]): Promise<number[][]> => {
   try {
-    const embeddingModel = generativeModel.getGenerativeModel({ model: 'text-embedding-004' });
+    const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
     const result = await embeddingModel.batchEmbedContents({
-      requests: chunks.map(chunk => ({ content: { parts: [{ text: chunk }] } }))
+      requests: chunks.map(chunk => ({ content: { role: "user", parts: [{ text: chunk }] } }))
     });
-    return result.embeddings.map(e => e.values);
+    return result.embeddings.map((e: any) => e.values);
   } catch (error) {
     console.error('Error generating embeddings:', error);
     throw new Error('Failed to generate embeddings for text chunks.');
@@ -50,7 +50,7 @@ export const retrieveRelevantChunks = async (query: string, fileIds: string[], t
   if (fileIds.length === 0) return '';
 
   try {
-    const embeddingModel = generativeModel.getGenerativeModel({ model: 'text-embedding-004' });
+    const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
     const queryEmbeddingResult = await embeddingModel.embedContent(query);
     const queryVector = queryEmbeddingResult.embedding.values;
 
@@ -73,16 +73,12 @@ export const retrieveRelevantChunks = async (query: string, fileIds: string[], t
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
 
-    console.log(`[ragService] Retrieved ${topChunks.length} relevant chunks for query: "${query}"`);
+    console.log(`[ragService] Retrieved ${topChunks.length} relevant chunks for query: ${query}`);
     topChunks.forEach((chunk, index) => {
       console.log(`  [Chunk ${index + 1}] Score: ${chunk.score.toFixed(4)}`);
     });
 
-    return topChunks.map(item => item.chunk).join('
-
----
-
-');
+    return topChunks.map(item => item.chunk).join('\n\n---\n\n');
 
   } catch (error) {
     console.error('Error retrieving relevant chunks:', error);

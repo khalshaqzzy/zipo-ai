@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, FunctionDeclaration, SchemaType } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import { IMessage } from './models/Message';
 
@@ -9,17 +9,17 @@ if (!apiKey) {
   throw new Error('LLM_API_KEY is not set in the environment variables');
 }
 
-const genAI = new GoogleGenerativeAI(apiKey);
+export const genAI = new GoogleGenerativeAI(apiKey);
 
-const canvasTools = [
+const canvasTools: FunctionDeclaration[] = [
   {
     "name": "speak",
     "description": "Provides the verbal part of the explanation. Should be called before visual elements to introduce them.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
         "text": {
-          "type": "STRING",
+          "type": SchemaType.STRING,
           "description": "The text to be spoken by the AI tutor."
         }
       },
@@ -30,14 +30,14 @@ const canvasTools = [
     "name": "createText",
     "description": "Renders text on the canvas, like labels or titles.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
-        "x": { "type": "NUMBER", "description": "The x-coordinate." },
-        "y": { "type": "NUMBER", "description": "The y-coordinate." },
-        "text": { "type": "STRING", "description": "The text content to display." },
-        "fontSize": { "type": "NUMBER", "description": "The font size of the text." },
-        "color": { "type": "STRING", "description": "The color of the text (e.g., '#RRGGBB')." },
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "x": { "type": SchemaType.NUMBER, "description": "The x-coordinate." },
+        "y": { "type": SchemaType.NUMBER, "description": "The y-coordinate." },
+        "text": { "type": SchemaType.STRING, "description": "The text content to display." },
+        "fontSize": { "type": SchemaType.NUMBER, "description": "The font size of the text." },
+        "color": { "type": SchemaType.STRING, "description": "The color of the text (e.g., '#RRGGBB')." },
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["x", "y", "text", "delay"]
     }
@@ -46,15 +46,15 @@ const canvasTools = [
     "name": "drawRectangle",
     "description": "Draws a rectangle on the canvas.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
-        "x": { "type": "NUMBER" },
-        "y": { "type": "NUMBER" },
-        "width": { "type": "NUMBER" },
-        "height": { "type": "NUMBER" },
-        "color": { "type": "STRING" },
-        "label": { "type": "STRING", "description": "A label to display inside the rectangle." },
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "x": { "type": SchemaType.NUMBER },
+        "y": { "type": SchemaType.NUMBER },
+        "width": { "type": SchemaType.NUMBER },
+        "height": { "type": SchemaType.NUMBER },
+        "color": { "type": SchemaType.STRING },
+        "label": { "type": SchemaType.STRING, "description": "A label to display inside the rectangle." },
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["x", "y", "width", "height", "color", "delay"]
     }
@@ -63,14 +63,14 @@ const canvasTools = [
     "name": "drawCircle",
     "description": "Draws a circle on the canvas.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
-        "x": { "type": "NUMBER" },
-        "y": { "type": "NUMBER" },
-        "radius": { "type": "NUMBER" },
-        "color": { "type": "STRING" },
-        "label": { "type": "STRING", "description": "A label for the circle." },
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "x": { "type": SchemaType.NUMBER },
+        "y": { "type": SchemaType.NUMBER },
+        "radius": { "type": SchemaType.NUMBER },
+        "color": { "type": SchemaType.STRING },
+        "label": { "type": SchemaType.STRING, "description": "A label for the circle." },
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["x", "y", "radius", "color", "delay"]
     }
@@ -79,15 +79,15 @@ const canvasTools = [
     "name": "drawArrow",
     "description": "Draws an arrow to connect elements.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
         "points": {
-          "type": "ARRAY",
+          "type": SchemaType.ARRAY,
           "description": "An array of coordinates [x1, y1, x2, y2, ...].",
-          "items": { "type": "NUMBER" }
+          "items": { "type": SchemaType.NUMBER }
         },
-        "color": { "type": "STRING" },
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "color": { "type": SchemaType.STRING },
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["points", "color", "delay"]
     }
@@ -96,17 +96,17 @@ const canvasTools = [
     "name": "createTable",
     "description": "Draws the structure of a table.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
-        "id": { "type": "STRING", "description": "A unique identifier for the table." },
-        "x": { "type": "NUMBER" },
-        "y": { "type": "NUMBER" },
-        "rows": { "type": "NUMBER" },
-        "cols": { "type": "NUMBER" },
-        "colWidths": { "type": "ARRAY", "items": { "type": "NUMBER" } },
-        "rowHeight": { "type": "NUMBER" },
-        "headers": { "type": "ARRAY", "items": { "type": "STRING" } },
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "id": { "type": SchemaType.STRING, "description": "A unique identifier for the table." },
+        "x": { "type": SchemaType.NUMBER },
+        "y": { "type": SchemaType.NUMBER },
+        "rows": { "type": SchemaType.NUMBER },
+        "cols": { "type": SchemaType.NUMBER },
+        "colWidths": { "type": SchemaType.ARRAY, "items": { "type": SchemaType.NUMBER } },
+        "rowHeight": { "type": SchemaType.NUMBER },
+        "headers": { "type": SchemaType.ARRAY, "items": { "type": SchemaType.STRING } },
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["id", "x", "y", "rows", "cols", "colWidths", "rowHeight", "headers", "delay"]
     }
@@ -115,13 +115,13 @@ const canvasTools = [
     "name": "fillTable",
     "description": "Fills a specific cell in a pre-drawn table.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
-        "tableId": { "type": "STRING", "description": "The ID of the target table." },
-        "row": { "type": "NUMBER", "description": "The 0-indexed row number." },
-        "col": { "type": "NUMBER", "description": "The 0-indexed column number." },
-        "text": { "type": "STRING", "description": "The content to fill in the cell." },
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "tableId": { "type": SchemaType.STRING, "description": "The ID of the target table." },
+        "row": { "type": SchemaType.NUMBER, "description": "The 0-indexed row number." },
+        "col": { "type": SchemaType.NUMBER, "description": "The 0-indexed column number." },
+        "text": { "type": SchemaType.STRING, "description": "The content to fill in the cell." },
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["tableId", "row", "col", "text", "delay"]
     }
@@ -130,9 +130,9 @@ const canvasTools = [
     "name": "clearCanvas",
     "description": "Clears all elements from the canvas.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {
-        "delay": { "type": "NUMBER", "description": "Time in milliseconds to wait after this command." }
+        "delay": { "type": SchemaType.NUMBER, "description": "Time in milliseconds to wait after this command." }
       },
       "required": ["delay"]
     }
@@ -141,7 +141,7 @@ const canvasTools = [
     "name": "session_end",
     "description": "Signals that the presentation is complete. Must be the last tool called.",
     "parameters": {
-      "type": "OBJECT",
+      "type": SchemaType.OBJECT,
       "properties": {},
       "required": []
     }
@@ -151,7 +151,7 @@ const canvasTools = [
 export const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 export const generativeModelTools = genAI.getGenerativeModel({ 
   model: "gemini-2.5-flash",
-  tools: { functionDeclarations: canvasTools },
+  tools: [{functionDeclarations: canvasTools}],
 });
 
 
@@ -167,7 +167,7 @@ export function formatHistory(messages: IMessage[], summary?: string): string {
           .map((cmd: any) => cmd.payload.text);
         return `AI: ${spokenTexts.join(' ')}`;
       } catch (error) {
-        return `AI: (Respon tidak dapat diproses)`;
+        return `AI: (Response cannot be processed)`;
       }
     }
   }).join('\n');
