@@ -9,6 +9,8 @@ export interface ISession extends Document {
   userId: Schema.Types.ObjectId;
   /** The title of the session, typically derived from the first user prompt. */
   title: string;
+  /** A running summary of the conversation for long-term context. */
+  summary?: string;
   /** The state of the visual canvas, stored as a flexible object array. */
   canvasState?: any;
 }
@@ -18,6 +20,8 @@ const sessionSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   /** The title of the learning session. */
   title: { type: String, required: true },
+  /** A running summary of the conversation. */
+  summary: { type: String },
   /** Stores the array of canvas objects to be rendered on the frontend. */
   canvasState: { type: Schema.Types.Mixed },
 }, {
