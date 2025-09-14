@@ -154,21 +154,13 @@ sessionNsp.on('connection', (socket: Socket) => {
     socket.on('start_session', async (data: { promptText: string, sessionId?: string, fileIds?: string[], languageCode?: string }) => {
         const { promptText, sessionId, fileIds, languageCode = 'id-ID' } = data;
         const userId = socket.userId;
+        let currentSessionId = sessionId;
         const isNewSession = !sessionId || !isValidObjectId(sessionId);
         console.log(`[Socket] INFO: Received 'start_session' event. isNew: ${isNewSession}, sessionId: ${sessionId}`);
 
         try {
             let currentSession: any;
-            let aggregatedFileContent = '';
             let history: string | undefined = undefined;
-
-            // If file IDs are provided, retrieve relevant chunks using RAG
-            if (fileIds && fileIds.length > 0) {
-                console.log(`[Socket] INFO: Retrieving relevant chunks for ${fileIds.length} file(s).`);
-                const validFileIds = fileIds.filter(id => isValidObjectId(id));
-                aggregatedFileContent = await retrieveRelevantChunks(promptText, validFileIds);
-                console.log('[Socket] INFO: Relevant file content retrieved via RAG.');
-            }
 
             // Handle new or existing sessions.
             if (isNewSession) {
@@ -179,8 +171,9 @@ sessionNsp.on('connection', (socket: Socket) => {
 
                 currentSession = new Session({ title: generatedTitle || promptText.substring(0, 30), userId });
                 await currentSession.save();
-                console.log(`[Socket] INFO: New session created with ID: ${currentSession._id}`);
-                socket.emit('session_created', { sessionId: currentSession._id.toString(), title: currentSession.title, updatedAt: currentSession.updatedAt });
+                currentSessionId = currentSession._id.toString();
+                console.log(`[Socket] INFO: New session created with ID: ${currentSessionId}`);
+                socket.emit('session_created', { sessionId: currentSessionId, title: currentSession.title, updatedAt: currentSession.updatedAt });
             } else {
                 console.log(`[Socket] INFO: Finding existing session with ID: ${sessionId}`);
                 currentSession = await Session.findOne({ _id: sessionId, userId: userId });
@@ -208,27 +201,51 @@ sessionNsp.on('connection', (socket: Socket) => {
                             currentSession.summary = summary;
                             currentSession.save().then(() => {
                                 console.log(`[Socket] INFO: Summary saved for session ${currentSession._id}`);
-                            }); // Save the new summary
+                            });
                         }
                     });
                 });
             }
 
-            // Generate the main AI response using Function Calling.
-            console.log('[Socket] INFO: Generating content from LLM with tools...');
-            const prompt = createPrompt(promptText, history, aggregatedFileContent);
-            const result = await generativeModelTools.generateContent(prompt);
-            const response = result.response;
+            // --- Agentic RAG Workflow ---
+            console.log('[Socket] INFO: Starting Agentic RAG workflow...');
+            
+            // 1. First LLM call (Decision) - No RAG context yet
+            const initialPrompt = createPrompt(promptText, history);
+            const initialResult = await generativeModelTools.generateContent(initialPrompt);
+            let response = initialResult.response;
+            let calls = response.functionCalls();
 
-            const calls = response.functionCalls();
-            if (!calls) {
-                throw new Error("LLM response did not contain function calls.");
+            // 2. Check if the LLM wants to use the RAG tool
+            if (calls && calls[0] && calls[0].name === 'retrieve_document_context') {
+                console.log('[Socket] INFO: LLM requested document context. Executing RAG tool.');
+                const ragQuery = calls[0].args.query as string;
+                const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
+                
+                if (validFileIds.length > 0) {
+                    const ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
+                    console.log('[Socket] INFO: RAG content retrieved. Making second LLM call (Synthesis).');
+
+                    // 3. Second LLM call (Synthesis) - Now with RAG context
+                    const synthesisPrompt = createPrompt(promptText, history, ragContent);
+                    const synthesisResult = await generativeModelTools.generateContent(synthesisPrompt);
+                    response = synthesisResult.response;
+                    calls = response.functionCalls();
+                } else {
+                    console.log('[Socket] WARN: LLM wanted to use RAG, but no valid fileIds were provided.');
+                    // Fallback: Re-run without the RAG tool if no files are available.
+                    const fallbackResult = await generativeModelTools.generateContent(initialPrompt);
+                    response = fallbackResult.response;
+                    calls = response.functionCalls();
+                }
             }
-            console.log(`[Socket] DEBUG: Raw function calls from LLM:`, JSON.stringify(calls, null, 2));
 
-            console.log(`[Socket] SUCCESS: Received ${calls.length} function calls from LLM.`);
+            if (!calls) {
+                throw new Error("LLM response did not contain function calls after synthesis.");
+            }
+            console.log(`[Socket] DEBUG: Final function calls from LLM:`, JSON.stringify(calls, null, 2));
 
-            // Transform function calls into the command stream format for the frontend
+            // 4. Transform and Orchestrate
             const commandStream: Command[] = calls.map(call => ({
                 command: call.name,
                 payload: call.args
@@ -237,7 +254,6 @@ sessionNsp.on('connection', (socket: Socket) => {
             currentSession.updatedAt = new Date();
             await currentSession.save();
 
-            // Orchestrate and emit the processed commands.
             console.log('[Socket] INFO: Handing off to orchestrator...');
             await orchestrateAndEmitCommands(commandStream, socket, currentSession._id.toString(), languageCode);
 

@@ -13,6 +13,20 @@ export const genAI = new GoogleGenerativeAI(apiKey);
 
 const canvasTools: FunctionDeclaration[] = [
   {
+    "name": "retrieve_document_context",
+    "description": "Retrieves relevant context from the uploaded documents based on a specific query. This should be called when the user's question requires information from the documents.",
+    "parameters": {
+      "type": SchemaType.OBJECT,
+      "properties": {
+        "query": {
+          "type": SchemaType.STRING,
+          "description": "The specific question or topic to search for within the documents."
+        }
+      },
+      "required": ["query"]
+    }
+  },
+  {
     "name": "speak",
     "description": "Provides the verbal part of the explanation. Should be called before visual elements to introduce them.",
     "parameters": {
@@ -183,15 +197,14 @@ export function formatHistory(messages: IMessage[], summary?: string): string {
 export function createPrompt(userInput: string, history?: string, fileContent?: string): string {
   const fileContext = fileContent
     ? `
-    **Primary Knowledge Source:**
-    The user has provided the following document(s) as the main source of truth. Base your entire explanation on this content. Do not use outside knowledge unless absolutely necessary to clarify a concept from the document. If the user's question cannot be answered from the document(s), say so.
+    **Retrieved Document Context:**
+    The following information was retrieved from the user-provided documents based on the query. Use this as the primary source of truth for your answer.
     
-    **Document(s) Content:**
     """
     ${fileContent}
     """
     `
-    : '';
+    : 'Documents are available for this session. If the user asks a question that might be answered by the documents, you MUST use the `retrieve_document_context` tool to get information before answering.';
 
   const fullConversation = history
     ? `${history}\nUser: ${userInput}`
@@ -199,6 +212,8 @@ export function createPrompt(userInput: string, history?: string, fileContent?: 
 
   return `
     You are Zipo, an expert tutor AI. Your personality is enthusiastic, patient, and incredibly supportive. You are passionate about making complex topics easy to understand. Your goal is to be a helpful and engaging learning companion.
+    
+    **CONTEXT**
     ${fileContext}
 
     Below is the full conversation history. Your task is to provide a response to the LAST user message, using the context of the entire conversation.

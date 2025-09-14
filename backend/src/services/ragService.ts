@@ -46,7 +46,7 @@ const cosineSimilarity = (vecA: number[], vecB: number[]): number => {
 };
 
 // Function to retrieve relevant chunks
-export const retrieveRelevantChunks = async (query: string, fileIds: string[], topK: number = 3): Promise<string> => {
+export const retrieveRelevantChunks = async (query: string, fileIds: string[], topK: number = 5): Promise<string> => {
   if (fileIds.length === 0) return '';
 
   try {
