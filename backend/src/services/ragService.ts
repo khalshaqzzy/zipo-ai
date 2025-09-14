@@ -86,3 +86,26 @@ export const retrieveRelevantChunks = async (query: string, fileIds: string[], t
     return '';
   }
 };
+
+/**
+ * Generates a concise summary of a given text content.
+ * @param content The text content to summarize.
+ * @returns A promise that resolves to a one or two-sentence summary.
+ */
+export const summarizeDocument = async (content: string): Promise<string> => {
+  if (!content.trim()) {
+    return '';
+  }
+
+  const prompt = `Summarize the following document content into a single, concise sentence (maximum 25 words). The summary should capture the main topic and purpose of the document.\n\n---\n${content.substring(0, 4000)}...\n---\n\nSummary:`;
+
+  try {
+    const result = await generativeModel.generateContent(prompt);
+    const summary = result.response.text();
+    console.log(`[ragService] Generated summary for document.`);
+    return summary.trim();
+  } catch (error) {
+    console.error("[ragService] Error generating document summary:", error);
+    return ""; // Return empty string on error
+  }
+};

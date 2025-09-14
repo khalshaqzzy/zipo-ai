@@ -161,6 +161,18 @@ sessionNsp.on('connection', (socket: Socket) => {
         try {
             let currentSession: any;
             let history: string | undefined = undefined;
+            let documentSummaries: string | undefined = undefined;
+
+            // If fileIds are present, fetch their summaries to provide context to the LLM
+            if (fileIds && fileIds.length > 0) {
+                const files = await File.find({ '_id': { $in: fileIds }, 'userId': userId });
+                if (files.length > 0) {
+                    documentSummaries = files
+                        .map(file => `File: '${file.originalFilename}', Summary: '${file.summary || 'Not available'}'`)
+                        .join('\n');
+                    console.log('[Socket] INFO: Found document summaries to add to prompt context.');
+                }
+            }
 
             // Handle new or existing sessions.
             if (isNewSession) {
@@ -210,8 +222,8 @@ sessionNsp.on('connection', (socket: Socket) => {
             // --- Agentic RAG Workflow ---
             console.log('[Socket] INFO: Starting Agentic RAG workflow...');
             
-            // 1. First LLM call (Decision) - No RAG context yet
-            const initialPrompt = createPrompt(promptText, history);
+            // 1. First LLM call (Decision) - With summaries, but no RAG content yet
+            const initialPrompt = createPrompt(promptText, history, undefined, documentSummaries);
             const initialResult = await generativeModelTools.generateContent(initialPrompt);
             let response = initialResult.response;
             let calls = response.functionCalls();
@@ -219,7 +231,7 @@ sessionNsp.on('connection', (socket: Socket) => {
             // 2. Check if the LLM wants to use the RAG tool
             if (calls && calls[0] && calls[0].name === 'retrieve_document_context') {
                 console.log('[Socket] INFO: LLM requested document context. Executing RAG tool.');
-                const ragQuery = calls[0].args.query as string;
+                const ragQuery = (calls[0].args as Record<string, any>)['query'] as string;
                 const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
                 
                 if (validFileIds.length > 0) {
@@ -227,7 +239,7 @@ sessionNsp.on('connection', (socket: Socket) => {
                     console.log('[Socket] INFO: RAG content retrieved. Making second LLM call (Synthesis).');
 
                     // 3. Second LLM call (Synthesis) - Now with RAG context
-                    const synthesisPrompt = createPrompt(promptText, history, ragContent);
+                    const synthesisPrompt = createPrompt(promptText, history, ragContent, documentSummaries);
                     const synthesisResult = await generativeModelTools.generateContent(synthesisPrompt);
                     response = synthesisResult.response;
                     calls = response.functionCalls();

@@ -5,7 +5,7 @@ import { upload } from '../middleware/multer';
 import { File } from '../models/File';
 import { Message } from '../models/Message';
 import { extractTextFromFile } from '../fileprocessing';
-import { chunkText, generateEmbeddings, storeEmbeddings } from '../services/ragService';
+import { chunkText, generateEmbeddings, storeEmbeddings, summarizeDocument } from '../services/ragService';
 
 
 const router = express.Router();
@@ -47,6 +47,23 @@ router.post('/', authMiddleware, (req: IAuthRequest, res) => {
       }
 
       const savedFiles = await Promise.all(files.map(async (file) => {
+        let summary = '';
+        let chunks: string[] = [];
+        let vectors: number[][] = [];
+
+        try {
+          console.log(`[UploadRoute] Starting content processing for ${file.originalname}...`);
+          const textContent = await extractTextFromFile(file.path, file.mimetype);
+          
+          if (textContent) {
+            summary = await summarizeDocument(textContent);
+            chunks = chunkText(textContent);
+            vectors = await generateEmbeddings(chunks);
+          }
+        } catch (processingError) {
+          console.error(`[UploadRoute] RAG/Summary processing failed for file ${file.originalname}:`, processingError);
+        }
+
         const newFile = new File({
           filename: file.filename,
           originalFilename: file.originalname,
@@ -54,23 +71,14 @@ router.post('/', authMiddleware, (req: IAuthRequest, res) => {
           mimetype: file.mimetype,
           size: file.size,
           userId: req.userId,
+          summary: summary, // Save the summary (will be empty if processing failed)
         });
         await newFile.save();
 
-        // --- RAG Processing ---
-        try {
-          console.log(`[UploadRoute] Starting RAG processing for ${file.originalname}...`);
-          const textContent = await extractTextFromFile(file.path, file.mimetype);
-          if (textContent) {
-            const chunks = chunkText(textContent);
-            const vectors = await generateEmbeddings(chunks);
-            storeEmbeddings((newFile._id as any).toString(), chunks, vectors);
-          }
-        } catch (ragError) {
-          // Log the error but don't fail the upload request itself
-          console.error(`[UploadRoute] RAG processing failed for file ${newFile._id}:`, ragError);
+        // Store embeddings now that we have the ID
+        if (vectors.length > 0) {
+          storeEmbeddings((newFile._id as any).toString(), chunks, vectors);
         }
-        // --- End RAG Processing ---
 
         return {
           fileId: newFile._id,

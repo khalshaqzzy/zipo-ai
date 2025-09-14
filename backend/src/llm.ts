@@ -194,17 +194,30 @@ export function formatHistory(messages: IMessage[], summary?: string): string {
   return recentHistory;
 }
 
-export function createPrompt(userInput: string, history?: string, fileContent?: string): string {
-  const fileContext = fileContent
-    ? `
+export function createPrompt(userInput: string, history?: string, fileContent?: string, documentSummaries?: string) {
+  let fileContext = '';
+
+  if (fileContent) {
+    // Context for the second call (Synthesis), after RAG has been performed.
+    fileContext = `
     **Retrieved Document Context:**
     The following information was retrieved from the user-provided documents based on the query. Use this as the primary source of truth for your answer.
     
     """
     ${fileContent}
     """
-    `
-    : 'Documents are available for this session. If the user asks a question that might be answered by the documents, you MUST use the `retrieve_document_context` tool to get information before answering.';
+    `;
+  } else if (documentSummaries) {
+    // Context for the first call (Decision), providing summaries for the agent.
+    fileContext = `
+    **Available Documents:**
+    The following documents are available for this session. If the user's question seems to relate to one of them, you MUST use the 
+retrieve_document_context
+ tool to get more information before answering.
+
+    ${documentSummaries}
+    `;
+  }
 
   const fullConversation = history
     ? `${history}\nUser: ${userInput}`
