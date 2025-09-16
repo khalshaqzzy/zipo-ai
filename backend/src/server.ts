@@ -209,37 +209,56 @@ sessionNsp.on('connection', (socket: Socket) => {
 
             console.log('[Socket] INFO: Starting stateful, multi-turn chat workflow...');
             const initialPrompt = createInitialPrompt(documentSummaries);
+            console.log('[Agentic Workflow] DEBUG: Initializing chat with history:', JSON.stringify([...initialPrompt, ...conversationHistory], null, 2));
             const chat = generativeModelTools.startChat({ history: [...initialPrompt, ...conversationHistory] });
+
+            console.log(`[Agentic Workflow] DEBUG: Sending user prompt to LLM: "${promptText}"`);
             let result = await chat.sendMessage(promptText);
 
-            let calls;
-            while ((calls = result.response.functionCalls()) && calls.length > 0) {
-                console.log(`[Socket] INFO: LLM requested ${calls.length} tool(s).`);
-                const toolResponses: any[] = [];
+            const MAX_TURNS = 5; // Safety break
+            let turn = 0;
+            let finalCalls = null;
 
-                for (const call of calls) {
-                    if (call.name === 'retrieve_document_context') {
-                        const ragQuery = (call.args as Record<string, any>)['query'] as string;
-                        const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
-                        let ragContent = '';
-                        if (validFileIds.length > 0) {
-                            ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
-                        }
-                        toolResponses.push({
-                            functionResponse: {
-                                name: 'retrieve_document_context',
-                                response: { result: ragContent || 'No relevant content found.' },
-                            }
-                        });
-                    }
+            while (turn < MAX_TURNS) {
+                console.log(`[Agentic Workflow] DEBUG: Turn ${turn + 1} - Received LLM response:`, JSON.stringify(result.response, null, 2));
+                const calls = result.response.functionCalls();
+                if (!calls || calls.length === 0) {
+                    finalCalls = result.response.functionCalls();
+                    break;
                 }
 
-                console.log('[Socket] INFO: Sending tool responses back to LLM.');
-                result = await chat.sendMessage(JSON.stringify(toolResponses));
+                const isRetrievalCall = calls.some(call => call.name === 'retrieve_document_context');
+                
+                if (isRetrievalCall) {
+                    console.log(`[Agentic Workflow] INFO: Turn ${turn + 1}: LLM requested document context. Executing tool...`);
+                    const toolResponses: any[] = [];
+                    for (const call of calls) {
+                        if (call.name === 'retrieve_document_context') {
+                            const ragQuery = (call.args as Record<string, any>)['query'] as string;
+                            const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
+                            let ragContent = 'No relevant content found.';
+                            if (validFileIds.length > 0) {
+                                ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
+                            }
+                            toolResponses.push({
+                                functionResponse: {
+                                    name: 'retrieve_document_context',
+                                    response: { result: ragContent },
+                                }
+                            });
+                        }
+                    }
+                    console.log(`[Agentic Workflow] DEBUG: Turn ${turn + 1}: Sending tool response to LLM:`, JSON.stringify(toolResponses, null, 2));
+                    result = await chat.sendMessage(JSON.stringify(toolResponses));
+                } else {
+                    console.log(`[Agentic Workflow] INFO: Turn ${turn + 1}: LLM returned final visual commands. Exiting loop.`);
+                    finalCalls = calls;
+                    break;
+                }
+                turn++;
             }
 
-            const finalResponse = result.response;
-            const finalCalls = finalResponse.functionCalls();
+            console.log('[Agentic Workflow] DEBUG: Loop finished. Final calls to be processed:', JSON.stringify(finalCalls, null, 2));
             if (!finalCalls) {
                 throw new Error("LLM response did not contain function calls after synthesis.");
             }
