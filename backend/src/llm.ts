@@ -179,12 +179,15 @@ export function buildHistoryForChat(messages: IMessage[]): Content[] {
     if (role === 'model') {
       try {
         const toolCalls = JSON.parse(message.text);
-        parts = toolCalls.map((call: any) => ({
-          functionCall: {
-            name: call.command,
-            args: call.payload,
-          },
-        }));
+        parts = toolCalls.map((call: any) => {
+          const { audioContent, ...restPayload } = call.payload;
+          return {
+            functionCall: {
+              name: call.command,
+              args: restPayload, // Send payload without audioContent
+            },
+          };
+        });
       } catch (e) {
         parts.push({ text: message.text });
       }
