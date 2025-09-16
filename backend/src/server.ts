@@ -19,7 +19,8 @@ import { Message, IMessage } from './models/Message';
 import { File } from './models/File';
 
 // Import services and utilities
-import { createPrompt, formatHistory, generativeModel, generativeModelTools } from './llm';
+import { createInitialPrompt, buildHistoryForChat, generativeModel, generativeModelTools } from './llm';
+import { Content } from '@google/generative-ai';
 import { extractTextFromFile } from './fileprocessing';
 import { synthesizeSpeech } from './services/ttsService';
 import { createSpeechStream } from './services/sttService';
@@ -160,23 +161,19 @@ sessionNsp.on('connection', (socket: Socket) => {
 
         try {
             let currentSession: any;
-            let history: string | undefined = undefined;
+            let conversationHistory: Content[] = [];
             let documentSummaries: string | undefined = undefined;
 
-            // If fileIds are present, fetch their summaries to provide context to the LLM
             if (fileIds && fileIds.length > 0) {
                 const files = await File.find({ '_id': { $in: fileIds }, 'userId': userId });
                 if (files.length > 0) {
                     documentSummaries = files
                         .map(file => `File: '${file.originalFilename}', Summary: '${file.summary || 'Not available'}'`)
                         .join('\n');
-                    console.log('[Socket] INFO: Found document summaries to add to prompt context.');
                 }
             }
 
-            // Handle new or existing sessions.
             if (isNewSession) {
-                console.log('[Socket] INFO: Creating a new session.');
                 const titlePrompt = `Summarize the following user prompt into a short, descriptive title of no more than 5 words: "${promptText}"`;
                 const titleResult = await generativeModel.generateContent(titlePrompt);
                 const generatedTitle = (await titleResult.response).text().trim().replace(/['"]+/g, '');
@@ -184,81 +181,70 @@ sessionNsp.on('connection', (socket: Socket) => {
                 currentSession = new Session({ title: generatedTitle || promptText.substring(0, 30), userId });
                 await currentSession.save();
                 currentSessionId = currentSession._id.toString();
-                console.log(`[Socket] INFO: New session created with ID: ${currentSessionId}`);
                 socket.emit('session_created', { sessionId: currentSessionId, title: currentSession.title, updatedAt: currentSession.updatedAt });
             } else {
-                console.log(`[Socket] INFO: Finding existing session with ID: ${sessionId}`);
                 currentSession = await Session.findOne({ _id: sessionId, userId: userId });
                 if (currentSession) {
-                    const previousMessages = await Message.find({ sessionId: currentSession._id }).sort({ createdAt: -1 }).limit(5);
-                    history = formatHistory(previousMessages.reverse(), currentSession.summary);
-                    console.log('[Socket] INFO: Session history formatted.');
+                    const previousMessages = await Message.find({ sessionId: currentSession._id }).sort({ createdAt: 1 });
+                    conversationHistory = buildHistoryForChat(previousMessages);
                 }
             }
 
             if (!currentSession) throw new Error("Session could not be found or created.");
 
-            // Save the user's message.
             const userMessage = new Message({ sessionId: currentSession._id, sender: 'user', text: promptText, fileIds: fileIds ? fileIds.filter(id => isValidObjectId(id)) : [] });
             await userMessage.save();
-            console.log('[Socket] INFO: User message saved.');
 
-            // Check if conversation needs summarization (non-blocking)
             const messageCount = await Message.countDocuments({ sessionId: currentSession._id });
             if (messageCount > 0 && messageCount % 10 === 0) {
-                console.log(`[Socket] INFO: Reached ${messageCount} messages. Triggering background summarization.`);
                 Message.find({ sessionId: currentSession._id }).sort({ createdAt: 1 }).then(messages => {
                     summarizeConversation(messages).then(summary => {
                         if (summary) {
                             currentSession.summary = summary;
-                            currentSession.save().then(() => {
-                                console.log(`[Socket] INFO: Summary saved for session ${currentSession._id}`);
-                            });
+                            currentSession.save();
                         }
                     });
                 });
             }
 
-            // --- Agentic RAG Workflow ---
-            console.log('[Socket] INFO: Starting Agentic RAG workflow...');
-            
-            // 1. First LLM call (Decision) - With summaries, but no RAG content yet
-            const initialPrompt = createPrompt(promptText, history, undefined, documentSummaries);
-            const initialResult = await generativeModelTools.generateContent(initialPrompt);
-            let response = initialResult.response;
-            let calls = response.functionCalls();
+            console.log('[Socket] INFO: Starting stateful, multi-turn chat workflow...');
+            const initialPrompt = createInitialPrompt(documentSummaries);
+            const chat = generativeModelTools.startChat({ history: [...initialPrompt, ...conversationHistory] });
+            let result = await chat.sendMessage(promptText);
 
-            // 2. Check if the LLM wants to use the RAG tool
-            if (calls && calls[0] && calls[0].name === 'retrieve_document_context') {
-                console.log('[Socket] INFO: LLM requested document context. Executing RAG tool.');
-                const ragQuery = (calls[0].args as Record<string, any>)['query'] as string;
-                const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
-                
-                if (validFileIds.length > 0) {
-                    const ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
-                    console.log('[Socket] INFO: RAG content retrieved. Making second LLM call (Synthesis).');
+            let calls;
+            while ((calls = result.response.functionCalls()) && calls.length > 0) {
+                console.log(`[Socket] INFO: LLM requested ${calls.length} tool(s).`);
+                const toolResponses: any[] = [];
 
-                    // 3. Second LLM call (Synthesis) - Now with RAG context
-                    const synthesisPrompt = createPrompt(promptText, history, ragContent, documentSummaries);
-                    const synthesisResult = await generativeModelTools.generateContent(synthesisPrompt);
-                    response = synthesisResult.response;
-                    calls = response.functionCalls();
-                } else {
-                    console.log('[Socket] WARN: LLM wanted to use RAG, but no valid fileIds were provided.');
-                    // Fallback: Re-run without the RAG tool if no files are available.
-                    const fallbackResult = await generativeModelTools.generateContent(initialPrompt);
-                    response = fallbackResult.response;
-                    calls = response.functionCalls();
+                for (const call of calls) {
+                    if (call.name === 'retrieve_document_context') {
+                        const ragQuery = (call.args as Record<string, any>)['query'] as string;
+                        const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
+                        let ragContent = '';
+                        if (validFileIds.length > 0) {
+                            ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
+                        }
+                        toolResponses.push({
+                            functionResponse: {
+                                name: 'retrieve_document_context',
+                                response: { result: ragContent || 'No relevant content found.' },
+                            }
+                        });
+                    }
                 }
+
+                console.log('[Socket] INFO: Sending tool responses back to LLM.');
+                result = await chat.sendMessage(JSON.stringify(toolResponses));
             }
 
-            if (!calls) {
+            const finalResponse = result.response;
+            const finalCalls = finalResponse.functionCalls();
+            if (!finalCalls) {
                 throw new Error("LLM response did not contain function calls after synthesis.");
             }
-            console.log(`[Socket] DEBUG: Final function calls from LLM:`, JSON.stringify(calls, null, 2));
 
-            // 4. Transform and Orchestrate
-            const commandStream: Command[] = calls.map(call => ({
+            const commandStream: Command[] = finalCalls.map(call => ({
                 command: call.name,
                 payload: call.args
             }));

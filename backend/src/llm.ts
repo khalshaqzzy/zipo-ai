@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, FunctionDeclaration, SchemaType } from '@google/generative-ai';
+import { GoogleGenerativeAI, FunctionDeclaration, SchemaType, Content } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import { IMessage } from './models/Message';
 
@@ -169,103 +169,97 @@ export const generativeModelTools = genAI.getGenerativeModel({
 });
 
 
-export function formatHistory(messages: IMessage[], summary?: string): string {
-  const recentHistory = messages.map(message => {
-    if (message.sender === 'user') {
-      return `User: ${message.text}`;
-    } else {
+export function buildHistoryForChat(messages: IMessage[]): Content[] {
+  const history: Content[] = [];
+
+  for (const message of messages) {
+    const role = message.sender === 'user' ? 'user' : 'model';
+    let parts: any[] = [];
+
+    if (role === 'model') {
       try {
-        const commands = JSON.parse(message.text);
-        const spokenTexts = commands
-          .filter((cmd: any) => cmd.command === 'speak' && cmd.payload && cmd.payload.text)
-          .map((cmd: any) => cmd.payload.text);
-        return `AI: ${spokenTexts.join(' ')}`;
-      } catch (error) {
-        return `AI: (Response cannot be processed)`;
+        const toolCalls = JSON.parse(message.text);
+        parts = toolCalls.map((call: any) => ({
+          functionCall: {
+            name: call.command,
+            args: call.payload,
+          },
+        }));
+      } catch (e) {
+        parts.push({ text: message.text });
       }
+    } else {
+      parts.push({ text: message.text });
     }
-  }).join('\n');
 
-  if (summary) {
-    console.log("[LLM] INFO: Formatting history with summary.");
-    return `This is a summary of the conversation so far:\n${summary}\n\nHere is the most recent part of the conversation:\n${recentHistory}`;
+    history.push({ role, parts });
   }
-
-  return recentHistory;
+  return history;
 }
 
-export function createPrompt(userInput: string, history?: string, fileContent?: string, documentSummaries?: string) {
-  let fileContext = '';
+export function createInitialPrompt(documentSummaries?: string): Content[] {
+  let contextText = `You are Zipo, an expert tutor AI. Your personality is enthusiastic, patient, and incredibly supportive. You are passionate about making complex topics easy to understand. Your goal is to be a helpful and engaging learning companion.
 
-  if (fileContent) {
-    // Context for the second call (Synthesis), after RAG has been performed.
-    fileContext = `
-    **Retrieved Document Context:**
-    The following information was retrieved from the user-provided documents based on the query. Use this as the primary source of truth for your answer.
-    
-    """
-    ${fileContent}
-    """
-    `;
-  } else if (documentSummaries) {
-    // Context for the first call (Decision), providing summaries for the agent.
-    fileContext = `
-    **Available Documents:**
-    The following documents are available for this session. If the user's question seems to relate to one of them, you MUST use the 
-retrieve_document_context
- tool to get more information before answering.
+  **Tool-Calling Principles**
 
-    ${documentSummaries}
-    `;
-  }
+  When you have gathered all the information you need (including from tools), you MUST generate the COMPLETE and FULL sequence of tool calls required to fulfill the user's request in a single response. Do not wait for tool results. Plan the entire visual and verbal presentation.
+  1.  **Introduce First, Then Draw:** Always start with a \`speak\` tool call to introduce what you're about to explain visually.
+  2.  **Build Step-by-Step:** Don't draw everything at once. Add one or two related visual elements, then use \`speak\` to explain them.
+  3.  **Use Delays for Pacing:** Every visual tool call requires a \`delay\` property in milliseconds.
+  4.  **Conclude the Session:** Always end your sequence of tool calls with \`session_end\`.
+  
+  **Stateful tool-use workflow Example
+  This is how you should reason and use tools.
 
-  const fullConversation = history
-    ? `${history}\nUser: ${userInput}`
-    : `User: ${userInput}`;
+  **Users prompt: Explain the concept of SQL and NoSQL based on my document**
 
-  return `
-    You are Zipo, an expert tutor AI. Your personality is enthusiastic, patient, and incredibly supportive. You are passionate about making complex topics easy to understand. Your goal is to be a helpful and engaging learning companion.
-    
-    **CONTEXT**
-    ${fileContext}
+  Your thought process (Turn 1): "The user is asking about a specific document. I need to get information from it first. i will call the \`retrieve_document_context\` tool."
+  Your Action (Turn 1): You will return a \`functionCall\` to \`retrieve_document_context\` with the query "SQL and NoSQL" (adjust the query for a better performance and results).
 
-    Below is the full conversation history. Your task is to provide a response to the LAST user message, using the context of the entire conversation.
+  **Backends response**: The backend will execute the tool and send the result back to you.
 
-    --- CONVERSATION HISTORY ---
-    ${fullConversation}
-    --- END OF HISTORY ---
+  Your thought process (Turn 2): "Excellent, I now have the necessary context about SQL and NoSQL. I can now generate the full visual and verbal explanation."
 
-    Your mission is to act as an orchestrator. You MUST generate the COMPLETE and FULL sequence of tool calls required to fulfill the user's request in a single response. Do not wait for tool results. Plan the entire visual and verbal presentation now.
+  Your Action (Turn 2): You will return the complete and final sequence of \`speak\`, \`createText\`, \`drawArrow\`, etc., calls to explain the concept, ending with \`sessionEnd\`
+ 
+  **Example of a Complete, Explanation Response:**
+  *Your Thought Process:* "Okay, I need to generate the *entire* sequence of calls in one go. I'll start by introducing the topic. Then, I'll draw the table. After that, I'll explain the 'Structure' difference and fill that part of the table. Then, I'll explain 'Scalability' and fill that part. Finally, I'll end the session."
 
-    **Tool-Calling Principles & Example**
+  *Resulting Full Sequence of Tool Calls (as a single response):*
+  1.  \`speak({ text: "Let's compare SQL and NoSQL databases. I'll create a table to show the key differences." })\`
+  2.  \`createTable({ id: "db-comp", ..., headers: ["Feature", "SQL", "NoSQL"], delay: 1000 })\`
+  3.  \`speak({ text: "First, let's look at their data structure." })\`
+  4.  \`fillTable({ tableId: "db-comp", row: 1, col: 0, text: "Structure", delay: 500 })\`
+  5.  \`fillTable({ tableId: "db-comp", row: 1, col: 1, text: "Tables with rows", delay: 500 })\`
+  6.  \`fillTable({ tableId: "db-comp", row: 1, col: 2, text: "JSON, key-value", delay: 1500 })\`
+  7.  \`speak({ text: "Next, how they handle scalability." })\`
+  8.  \`fillTable({ tableId: "db-comp", row: 2, col: 0, text: "Scalability", delay: 500 })\`
+  9.  \`fillTable({ tableId: "db-comp", row: 2, col: 1, text: "Vertical", delay: 500 })\`
+  10. \`fillTable({ tableId: "db-comp", row: 2, col: 2, text: "Horizontal", delay: 1500 })\`
+  11. \`session_end({})\`  
 
-    To ensure a great user experience, follow these principles:
-
-    1.  **Introduce First, Then Draw:** Always start with a \`speak\` tool call to introduce what you're about to explain visually.
-    2.  **Build Step-by-Step:** Don't draw everything at once. Add one or two related visual elements, then use \`speak\` to explain them. This creates a paced, easy-to-follow lesson.
-    3.  **Use Delays for Pacing:** Every visual tool call (\`createText\`, \`drawRectangle\`, etc.) requires a \`delay\` property in milliseconds. This is the pause *after* the element is drawn, giving the user time to see what happened before the next command. Use values between 500 and 1500.
-    4.  **Be Clear and Concise:** Keep spoken explanations and visual labels short and to the point.
-    5.  **Conclude the Session:** Always end your sequence of tool calls with \`session_end\`.
-
-    **Example of a Complete, Single-Turn Response:**
-    *User Prompt:* "Compare SQL and NoSQL databases."
-
-    *Your Thought Process:* "Okay, I need to generate the *entire* sequence of calls in one go. I'll start by introducing the topic. Then, I'll draw the table. After that, I'll explain the 'Structure' difference and fill that part of the table. Then, I'll explain 'Scalability' and fill that part. Finally, I'll end the session."
-
-    *Resulting Full Sequence of Tool Calls (as a single response):*
-    1.  \`speak({ text: "Let's compare SQL and NoSQL databases. I'll create a table to show the key differences." })\`
-    2.  \`createTable({ id: "db-comp", ..., headers: ["Feature", "SQL", "NoSQL"], delay: 1000 })\`
-    3.  \`speak({ text: "First, let's look at their data structure." })\`
-    4.  \`fillTable({ tableId: "db-comp", row: 1, col: 0, text: "Structure", delay: 500 })\`
-    5.  \`fillTable({ tableId: "db-comp", row: 1, col: 1, text: "Tables with rows", delay: 500 })\`
-    6.  \`fillTable({ tableId: "db-comp", row: 1, col: 2, text: "JSON, key-value", delay: 1500 })\`
-    7.  \`speak({ text: "Next, how they handle scalability." })\`
-    8.  \`fillTable({ tableId: "db-comp", row: 2, col: 0, text: "Scalability", delay: 500 })\`
-    9.  \`fillTable({ tableId: "db-comp", row: 2, col: 1, text: "Vertical", delay: 500 })\`
-    10. \`fillTable({ tableId: "db-comp", row: 2, col: 2, text: "Horizontal", delay: 1500 })\`
-    11. \`session_end({})\`
+  **Note**: Adjust your final response to be more detailed, explanatory.
+  
+  
+  
+  
   `;
+
+  if (documentSummaries) {
+    contextText += `
+
+**Available Documents:**
+    The following documents are available for this session. If the user's question seems to relate to one of them, you MUST use the 'retrieve_document_context' tool to get more information before answering.
+
+    ${documentSummaries}`;
+  }
+
+  return [
+      { role: 'user', parts: [{ text: contextText }] },
+      { role: 'model', parts: [{ text: "Okay, I understand my role. I am Zipo, an expert AI tutor. I will await the user's prompt." }] }
+  ];
 }
+
 
 export function createModulePlanPrompt(userInput: string, moduleLength: 'Short' | 'Medium' | 'Long', fileContent?: string): string {
   const stepCount = { 'Short': 1, 'Medium': 3, 'Long': 5 }[moduleLength];
@@ -458,14 +452,7 @@ export function createModulePrompt(userInput: string, fileContent: string | unde
   `;
 }
 
-export async function generateContentWithHistory(userInput: string, history?: string, fileContent?: string): Promise<string> {
-    const prompt = createPrompt(userInput, history, fileContent);
-    console.log("--- PROMPT LENGKAP YANG DIKIRIM KE GEMINI ---");
-    console.log(prompt);
-    const result = await generativeModel.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
-}
+
 
 /*
 export function createQuizPrompt(content: string, instructions: string, questionCount: number): string {
