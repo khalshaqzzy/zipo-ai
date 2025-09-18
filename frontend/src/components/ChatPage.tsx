@@ -699,8 +699,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ sessionId: initialSessionId, isNew,
         )}
         <div className="p-4 bg-white border-t border-gray-200 flex-shrink-0"> {/* Lesson progress bar. */}
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">Lesson Progress</span>
-            <span className="text-sm text-gray-500">{lessonSteps.current} / {lessonSteps.total} steps</span>
+            <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Lesson Progress</span>
+                <span className="text-sm text-gray-500">({lessonSteps.current} / {lessonSteps.total} steps)</span>
+            </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-black h-2 rounded-full transition-all duration-300" style={{ width: `${lessonSteps.total > 0 ? (lessonSteps.current / lessonSteps.total) * 100 : 0}%` }}></div></div>
         </div>

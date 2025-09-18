@@ -154,7 +154,12 @@ function App() {
   }
   
   // Determine whether to show the navigation bar based on authentication and current path.
-  const showNavBar = isAuthenticated && !location.pathname.startsWith('/landing') && !location.pathname.startsWith('/tutorial');
+  const showNavBar = isAuthenticated && 
+    !location.pathname.startsWith('/landing') && 
+    !location.pathname.startsWith('/tutorial') &&
+    !location.pathname.startsWith('/app/generate-module') &&
+    !location.pathname.startsWith('/app/play-module') &&
+    !location.pathname.startsWith('/app/play-local');
 
   return (
     <ToastProvider> {/* Provides toast notifications throughout the app. */}

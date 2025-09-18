@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../hooks/useToast';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
-import { ArrowLeft, Loader2, Play, Pause, RotateCcw, Download } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, RotateCcw, Download, Minimize2, Maximize2 } from 'lucide-react';
 import { Stage, Layer, Text as KonvaText, Rect, Arrow, Circle } from 'react-konva';
 import zipoIcon from '../../assets/zipo_white.png';
 import { LocalModule } from '../App';
@@ -31,6 +31,7 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [isCanvasVisible, setIsCanvasVisible] = useState(false);
+  const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
 
   const { moduleId } = useParams<{ moduleId: string }>();
   const navigate = useNavigate();
@@ -106,7 +107,7 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
       const timer = setTimeout(checkSize, 800); // 700ms animation + 100ms buffer
       return () => clearTimeout(timer);
     }
-  }, [isCanvasVisible]);
+  }, [isCanvasVisible, transcriptCollapsed]); // Rerun on collapse
 
   // Effect to handle window resize events
   useLayoutEffect(() => {
@@ -117,8 +118,9 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
       }
     };
     window.addEventListener('resize', checkSize);
+    checkSize(); // Initial check
     return () => window.removeEventListener('resize', checkSize);
-  }, []);
+  }, [transcriptCollapsed]); // Rerun on collapse
 
   // Command processing logic
   useEffect(() => {
@@ -208,6 +210,7 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
     setCanvasObjects([]);
     setCurrentTranscript('');
     setIsCanvasVisible(false); // Collapse the canvas
+    setTranscriptCollapsed(false);
   };
 
   const handleDownload = async () => {
@@ -335,10 +338,13 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
                         <span>Download</span>
                     </button>
                 )}
+                <button onClick={() => setTranscriptCollapsed(!transcriptCollapsed)} className="p-2 text-gray-500 hover:bg-gray-200 rounded-lg transition-all" title={transcriptCollapsed ? "Show Transcript" : "Hide Transcript"}>
+                    {transcriptCollapsed ? <Maximize2 className="w-5 h-5" /> : <Minimize2 className="w-5 h-5" />}
+                </button>
             </div>
         </div>
         <div className="flex-1 flex overflow-hidden">
-            <div ref={canvasContainerRef} className={`h-full bg-gray-50 relative transition-all duration-700 ease-in-out ${isCanvasVisible ? 'w-2/3' : 'w-0'}`}>
+            <div ref={canvasContainerRef} className={`h-full bg-gray-50 relative transition-all duration-700 ease-in-out ${isCanvasVisible ? (transcriptCollapsed ? 'w-full' : 'w-2/3') : 'w-0'}`}>
                 {canvasSize.width > 0 && (
                     <Stage width={canvasSize.width} height={canvasSize.height}>
                         <Layer key={canvasObjects.length}>{canvasObjects.map(renderCanvasObject)}</Layer>
@@ -356,15 +362,15 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
                   </div>
                 )}
             </div>
-            <div ref={transcriptScrollRef} className={`h-full border-l border-gray-200 flex flex-col overflow-y-auto transition-all duration-700 ease-in-out ${isCanvasVisible ? 'w-1/3' : 'w-full'}`}>
-                <div className="p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+            <div ref={transcriptScrollRef} className={`h-full border-l border-gray-200 flex flex-col overflow-y-auto transition-all duration-700 ease-in-out ${isCanvasVisible ? (transcriptCollapsed ? 'w-0' : 'w-1/3') : 'w-full'}`}>
+                <div className={`p-4 border-b border-gray-200 sticky top-0 bg-white z-10 transition-opacity duration-300 ${transcriptCollapsed ? 'opacity-0' : 'opacity-100'}`}>
                     <h3 className="font-bold text-black">Transcript</h3>
                     <p className="text-sm text-gray-500">{currentSpeakIndex} / {speakCommands.length} spoken parts</p>
                     <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
                         <div className="bg-black h-1.5 rounded-full transition-all duration-300" style={{ width: `${totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0}%` }}></div>
                     </div>
                 </div>
-                <div className="flex-1 p-4 space-y-2">
+                <div className={`flex-1 p-4 space-y-2 transition-opacity duration-300 ${transcriptCollapsed ? 'opacity-0' : 'opacity-100'}`}>
                     {transcript.map((text, index) => {
                         const commandIndex = commandQueue.findIndex(cmd => cmd.command === 'speak' && cmd.payload.text === text);
                         const isCurrent = isSpeaking && commandIndex === currentStep;
