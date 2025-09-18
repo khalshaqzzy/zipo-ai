@@ -541,66 +541,15 @@ export function createModulePrompt(userInput: string, fileContent: string | unde
 }
 
 
+export function createOpenAIInitialMessages(documentSummaries?: string): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+    let systemPrompt = `You are Zipo, an expert tutor AI. Your personality is enthusiastic, patient, and incredibly supportive. You are passionate about making complex topics easy to understand. Your goal is to be a helpful and engaging learning companion.\n\n**Core Mission:** Your primary goal is to answer the user\'s prompt by calling a sequence of functions (tools) to generate a visual and verbal explanation. You MUST NOT respond with a simple text message.\n\n**Tool-Calling Rules:**\n1.  **Always Use Tools:** For any user request, you must respond by calling the provided tools. Do not answer with plain text.\n2.  **Agentic Retrieval:** If documents are available (see below) and the user\'s query seems related to them, you MUST first call the \`retrieve_document_context\` tool to get information. Then, in the next turn, use that information to call the visual explanation tools.\n3.  **Full Sequence:** After gathering all necessary information (including from tools), you MUST generate the COMPLETE and FULL sequence of tool calls required to fulfill the user\'s request in a single response. Plan the entire visual and verbal presentation.\n4.  **Always End:** The final tool call in your sequence must always be \`session_end\`.`;
 
-/*
-export function createQuizPrompt(content: string, instructions: string, questionCount: number): string {
-  return `
-You are an expert quiz generator. Based on the provided document content and instructions, create a comprehensive quiz.
-
-**Document Content:**
-${content}
-
-**Instructions:**
-${instructions}
-
-**Requirements:**
-- Generate exactly ${questionCount} questions.
-- Mix question types: multiple-choice, true-false, and checkboxes (for multiple correct answers).
-- Ensure questions test different aspects: comprehension, analysis, application.
-- Provide clear, unambiguous questions.
-- For multiple-choice questions, provide 4 options with only one correct answer.
-- For true-false questions, ensure the statement is clearly true or false.
-- For checkboxes questions, provide 4-5 options where 1 or more can be correct.
-- Include brief explanations for correct answers for all question types.
-
-**Output Format:**
-Respond with a valid JSON object in this exact format:
-
-{
-  "title": "Quiz Title Based on Content",
-  "questions": [
-    {
-      "question": "Which of the following are primary colors?",
-      "type": "checkboxes",
-      "options": ["Red", "Green", "Blue", "Yellow"],
-      "correctAnswer": [0, 2, 3],
-      "explanation": "Red, Blue, and Yellow are the primary colors."
-    },
-    {
-      "question": "The sky is blue.",
-      "type": "true-false",
-      "options": ["True", "False"],
-      "correctAnswer": 0,
-      "explanation": "The sky appears blue due to Rayleigh scattering."
-    },
-    {
-      "question": "What is the capital of France?",
-      "type": "multiple-choice",
-      "options": ["London", "Berlin", "Paris", "Madrid"],
-      "correctAnswer": 2,
-      "explanation": "Paris is the capital of France."
+    if (documentSummaries) {
+        systemPrompt += `\n\n**Available Documents:**\n${documentSummaries}`;
     }
-  ]
-}
 
-**Important:**
-- `correctAnswer` for multiple-choice and true-false should be the index (0, 1, 2, 3).
-- `correctAnswer` for checkboxes must be an array of correct indices (e.g., [0, 2]).
-- Ensure all questions are directly related to the provided content.
-- Make questions challenging but fair.
-- Vary the difficulty levels across questions.
-
-Generate the quiz now:
-`;
+    return [
+        { role: 'system', content: systemPrompt },
+        { role: 'assistant', content: "Okay, I understand my role. I will only use the provided tools to respond and create visual explanations." }
+    ];
 }
-*/

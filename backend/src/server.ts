@@ -19,7 +19,7 @@ import { Message, IMessage } from './models/Message';
 import { File } from './models/File';
 
 // Import services and utilities
-import { createInitialPrompt, buildHistoryForChat, generativeModel, generativeModelTools, seaLionClient, geminiToolsToOpenAI, geminiHistoryToOpenAI, canvasTools } from './llm';
+import { createInitialPrompt, buildHistoryForChat, generativeModel, generativeModelTools, seaLionClient, geminiToolsToOpenAI, geminiHistoryToOpenAI, canvasTools, createOpenAIInitialMessages } from './llm';
 import { Content } from '@google/generative-ai';
 import { extractTextFromFile } from './fileprocessing';
 import { synthesizeSpeech } from './services/ttsService';
@@ -323,9 +323,10 @@ sessionNsp.on('connection', (socket: Socket) => {
                 const userMessage = new Message({ sessionId: currentSession._id, sender: 'user', text: promptText, fileIds: fileIds ? fileIds.filter(id => isValidObjectId(id)) : [] });
                 await userMessage.save();
 
-                const initialPrompt = createInitialPrompt(documentSummaries);
-                const fullHistory = [...initialPrompt, ...conversationHistory];
-                const openAIMessages = geminiHistoryToOpenAI(fullHistory);
+                const openAIInitialMessages = createOpenAIInitialMessages(documentSummaries);
+                const openAIMessages = [...openAIInitialMessages, ...geminiHistoryToOpenAI(conversationHistory)];
+                openAIMessages.push({ role: 'user', content: promptText });
+
                 const openAITools = geminiToolsToOpenAI(canvasTools);
 
                 let finalCalls: any[] | null = null;
