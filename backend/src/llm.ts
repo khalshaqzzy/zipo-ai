@@ -1,17 +1,31 @@
 import { GoogleGenerativeAI, FunctionDeclaration, SchemaType, Content } from '@google/generative-ai';
+import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { IMessage } from './models/Message';
 
 dotenv.config();
 
-const apiKey = process.env.LLM_API_KEY;
-if (!apiKey) {
-  throw new Error('LLM_API_KEY is not set in the environment variables');
+// Gemini Client
+const geminiApiKey = process.env.LLM_API_KEY;
+if (!geminiApiKey) {
+  throw new Error('LLM_API_KEY (for Gemini) is not set in the environment variables');
+}
+export const genAI = new GoogleGenerativeAI(geminiApiKey);
+
+// SEA-LION Client (OpenAI compatible)
+const seaLionApiKey = process.env.SEALION_API_KEY;
+const seaLionBaseUrl = process.env.SEALION_API_BASE_URL;
+
+if (!seaLionApiKey || !seaLionBaseUrl) {
+    console.warn('SEA_LION_API_KEY or SEA_LION_API_BASE_URL is not set. SEA-LION model will not be available.');
 }
 
-export const genAI = new GoogleGenerativeAI(apiKey);
+export const seaLionClient = seaLionApiKey && seaLionBaseUrl ? new OpenAI({
+    apiKey: seaLionApiKey,
+    baseURL: seaLionBaseUrl,
+}) : null;
 
-const canvasTools: FunctionDeclaration[] = [
+export const canvasTools: FunctionDeclaration[] = [
   {
     "name": "retrieve_document_context",
     "description": "Retrieves relevant context from the uploaded documents based on a specific query. This should be called when the user's question requires information from the documents.",
@@ -167,6 +181,77 @@ export const generativeModelTools = genAI.getGenerativeModel({
   model: "gemini-2.5-flash",
   tools: [{functionDeclarations: canvasTools}],
 });
+
+// --- Format Conversion Utilities for OpenAI Compatibility ---
+
+/**
+ * Converts Gemini FunctionDeclarations to OpenAI ChatCompletionTool format.
+ * @param tools The array of Gemini FunctionDeclarations.
+ * @returns An array of tools in a format compatible with OpenAI.
+ */
+export const geminiToolsToOpenAI = (tools: FunctionDeclaration[]): OpenAI.Chat.Completions.ChatCompletionTool[] => {
+    return tools.map(tool => {
+        // A simple mapping, assuming Gemini's parameter schema can be roughly translated.
+        // This might need adjustment for more complex schemas.
+        const parameters = {
+            ...tool.parameters,
+            type: 'object', // OpenAI uses string literal 'object'
+        };
+
+        return {
+            type: 'function', // OpenAI requires a 'type' field, which is 'function' for tools
+            function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: parameters,
+            },
+        };
+    });
+};
+
+/**
+ * Converts a Gemini chat history (Content[]) to an OpenAI compatible message array.
+ * @param history The chat history in Gemini's Content format.
+ * @returns A message array compatible with OpenAI's chat completions.
+ */
+export const geminiHistoryToOpenAI = (history: Content[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] => {
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+
+    for (const item of history) {
+        if (item.role === 'user') {
+            messages.push({ role: 'user', content: item.parts[0].text || '' });
+        } else if (item.role === 'model') {
+            const toolCalls: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] = [];
+            let modelTextContent = '';
+
+            for (const part of item.parts) {
+                if (part.functionCall) {
+                    toolCalls.push({
+                        id: `call_${Math.random().toString(36).substring(2, 11)}`, // OpenAI needs an ID for tool calls
+                        type: 'function',
+                        function: {
+                            name: part.functionCall.name,
+                            arguments: JSON.stringify(part.functionCall.args),
+                        },
+                    });
+                } else if (part.text) {
+                    modelTextContent += part.text;
+                }
+            }
+
+            if (toolCalls.length > 0) {
+                messages.push({ role: 'assistant', tool_calls: toolCalls });
+            } else if (modelTextContent) {
+                messages.push({ role: 'assistant', content: modelTextContent });
+            }
+        }
+        // Note: This simple conversion doesn't handle tool responses yet.
+        // This will be added when implementing the full fallback logic.
+    }
+
+    return messages;
+};
+
 
 
 export function buildHistoryForChat(messages: IMessage[]): Content[] {
