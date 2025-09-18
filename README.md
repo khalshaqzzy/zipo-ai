@@ -71,9 +71,9 @@ Here's a glimpse of Zipo in action.
 
 | Photo | Name | Role |
 | :---: | :---: | :---: |
-| <img src="frontend/assets/team/sakil.jpg" alt="Khalfani Shaquille" width="150"> | **Khalfani Shaquille** | Backend & AI Engineer |
-| <img src="frontend/assets/team/varel.jpg" alt="Varel Tiara" width="150"> | **Varel Tiara** | Fullstack Developer |
-| <img src="frontend/assets/team/ibay.jpg" alt="M Ikhbar A" width="150"> | **M Ikhbar A** | Frontend & DevOps |
+| <img src="frontend/assets/team/sakil.jpg" alt="Khalfani Shaquille" width="150"> | **Khalfani Shaquille** | Project Lead |
+| <img src="frontend/assets/team/varel.jpg" alt="Varel Tiara" width="150"> | **Varel Tiara** | Collaborator |
+| <img src="frontend/assets/team/ibay.jpg" alt="M Ikhbar A" width="150"> | **M Ikhbar A** | Product Manager |
 
 ## 🛠️ Getting Started & Deployment Guide
 
