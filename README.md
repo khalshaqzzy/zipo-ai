@@ -11,7 +11,11 @@
 [![PWA](https://img.shields.io/badge/App-PWA-5A0FC8?logo=pwa&logoColor=white)](#)
 [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](#)
 [![MongoDB](https://img.shields.io/badge/DB-MongoDB-47A248?logo=mongodb&logoColor=white)](#)
-[![Made with Love](https://img.shields.io/badge/Made%20with-❤️-ff6b6b)](#)
+
+---
+> **Live Demo:** Try Zipo now at **[zipoai.xyz](https://zipoai.xyz)**
+>
+> **Recommended Browser:** Google Chrome
 ---
 
 ## 🌏 Background: The Challenge of Educational Equity
@@ -97,14 +101,28 @@ The backend service requires environment variables and Google Cloud credentials.
     Add the following environment variables to the `.env` file. These are essential for the database connection, authentication, and AI services.
 
     ```
-    # MongoDB Connection
+    # Set to 'production'
+    NODE_ENV=production
+
+    # MongoDB connection string
     MONGO_URI=mongodb://mongo:27017/zipo
 
-    # JWT Secret for authentication
-    JWT_SECRET=your_super_secret_jwt_key
+    # A strong, random secret for signing JWTs
+    JWT_SECRET=your_jwt_key_here
 
-    # Google AI API Key
-    GEMINI_API_KEY=your_google_ai_api_key
+    # API key for Google Generative AI
+    LLM_API_KEY=YOUR_GEMINI_API_KEY
+
+    # The public URL of the frontend for production
+    FRONTEND_URL=https://zipoai.xyz
+
+    # Path to Google Cloud credentials file inside the backend container
+    GOOGLE_APPLICATION_CREDENTIALS=/app/google-credentials.json
+
+
+    #SEALION API
+    SEALION_API_KEY=YOUR_SEALION_API_KEY
+    SEALION_API_BASE_URL=https://api.sea-lion.ai/v1
     ```
 
 3.  **Google Credentials:**
@@ -132,41 +150,3 @@ This is the simplest way to get the entire application stack (Frontend, Backend,
 3.  **Access the application:**
     Once the build is complete and the containers are running, you can access the Zipo application at `http://localhost` in your web browser.
 
-### 💻 Local Development (Without Docker)
-
-If you prefer to run the services manually for development, follow these steps.
-
-**1. Run the Backend:**
-
-*   **Navigate to the backend directory:**
-    ```sh
-    cd backend
-    ```
-*   **Install dependencies:**
-    ```sh
-    npm install
-    ```
-*   **Run the development server:**
-    This will start the backend server using `nodemon`, which automatically restarts on file changes.
-    ```sh
-    npm run dev
-    ```
-*   The backend will be running on the port configured in your setup (typically specified via environment variables or a default in `server.ts`).
-
-**2. Run the Frontend:**
-
-*   **Open a new terminal window.**
-*   **Navigate to the frontend directory:**
-    ```sh
-    cd frontend
-    ```
-*   **Install dependencies:**
-    ```sh
-    npm install
-    ```
-*   **Run the development server:**
-    This will start the Vite development server.
-    ```sh
-    npm run dev
-    ```
-*   Vite will provide a local URL (usually `http://localhost:5173`) where you can access the frontend.
