@@ -338,13 +338,10 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
                         <span>Download</span>
                     </button>
                 )}
-                <button onClick={() => setTranscriptCollapsed(!transcriptCollapsed)} className="p-2 text-gray-500 hover:bg-gray-200 rounded-lg transition-all" title={transcriptCollapsed ? "Show Transcript" : "Hide Transcript"}>
-                    {transcriptCollapsed ? <Maximize2 className="w-5 h-5" /> : <Minimize2 className="w-5 h-5" />}
-                </button>
             </div>
         </div>
         <div className="flex-1 flex overflow-hidden">
-            <div ref={canvasContainerRef} className={`h-full bg-gray-50 relative transition-all duration-700 ease-in-out ${isCanvasVisible ? (transcriptCollapsed ? 'w-full' : 'w-2/3') : 'w-0'}`}>
+            <div ref={canvasContainerRef} className={`h-full bg-gray-50 relative transition-all duration-700 ease-in-out ${isCanvasVisible ? (transcriptCollapsed ? 'w-full' : 'w-3/4') : 'w-0'}`}>
                 {canvasSize.width > 0 && (
                     <Stage width={canvasSize.width} height={canvasSize.height}>
                         <Layer key={canvasObjects.length}>{canvasObjects.map(renderCanvasObject)}</Layer>
@@ -362,13 +359,20 @@ const PlayModulePage: React.FC<PlayModulePageProps> = ({ isLocal, localModuleDat
                   </div>
                 )}
             </div>
-            <div ref={transcriptScrollRef} className={`h-full border-l border-gray-200 flex flex-col overflow-y-auto transition-all duration-700 ease-in-out ${isCanvasVisible ? (transcriptCollapsed ? 'w-0' : 'w-1/3') : 'w-full'}`}>
-                <div className={`p-4 border-b border-gray-200 sticky top-0 bg-white z-10 transition-opacity duration-300 ${transcriptCollapsed ? 'opacity-0' : 'opacity-100'}`}>
-                    <h3 className="font-bold text-black">Transcript</h3>
-                    <p className="text-sm text-gray-500">{currentSpeakIndex} / {speakCommands.length} spoken parts</p>
-                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-                        <div className="bg-black h-1.5 rounded-full transition-all duration-300" style={{ width: `${totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0}%` }}></div>
+            <div ref={transcriptScrollRef} className={`h-full border-l border-gray-200 flex flex-col overflow-y-auto transition-all duration-700 ease-in-out ${isCanvasVisible ? (transcriptCollapsed ? 'w-0' : 'w-1/4') : 'w-full'}`}>
+                <div className={`p-4 border-b border-gray-200 sticky top-0 bg-white z-10 transition-opacity duration-300 flex justify-between items-center ${transcriptCollapsed ? 'opacity-0' : 'opacity-100'}`}>
+                    <div>
+                        <h3 className="font-bold text-black">Transcript</h3>
+                        <p className="text-sm text-gray-500">{currentSpeakIndex} / {speakCommands.length} spoken parts</p>
                     </div>
+                    {isCanvasVisible && (
+                        <button onClick={() => setTranscriptCollapsed(!transcriptCollapsed)} className="p-2 text-gray-500 hover:bg-gray-200 rounded-lg transition-all" title={transcriptCollapsed ? "Show Transcript" : "Hide Transcript"}>
+                            {transcriptCollapsed ? <Maximize2 className="w-5 h-5" /> : <Minimize2 className="w-5 h-5" />}
+                        </button>
+                    )}
+                </div>
+                <div className={`w-full bg-gray-200 h-1.5  ${transcriptCollapsed ? 'opacity-0' : 'opacity-100'}`}>
+                    <div className="bg-black h-1.5 rounded-full transition-all duration-300" style={{ width: `${totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0}%` }}></div>
                 </div>
                 <div className={`flex-1 p-4 space-y-2 transition-opacity duration-300 ${transcriptCollapsed ? 'opacity-0' : 'opacity-100'}`}>
                     {transcript.map((text, index) => {
