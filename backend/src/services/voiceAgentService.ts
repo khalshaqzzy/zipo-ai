@@ -1,5 +1,23 @@
 import { IMessage } from '../models/Message';
-import { formatHistory as formatMainSessionHistory, generativeModel } from '../llm';
+import { generativeModel } from '../llm';
+
+function formatMainSessionHistory(messages: IMessage[]): string {
+  return messages.map(message => {
+    if (message.sender === 'user') {
+      return `User: ${message.text}`;
+    } else {
+      try {
+        const commands = JSON.parse(message.text);
+        const spokenTexts = commands
+          .filter((cmd: any) => cmd.command === 'speak' && cmd.payload && cmd.payload.text)
+          .map((cmd: any) => cmd.payload.text);
+        return `AI: ${spokenTexts.join(' ')}`;
+      } catch (error) {
+        return `AI: (Response cannot be processed)`;
+      }
+    }
+  }).join('\n');
+}
 
 /**
  * Formats the history of a live conversation into a simple string for the LLM.

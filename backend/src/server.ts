@@ -19,12 +19,16 @@ import { Message, IMessage } from './models/Message';
 import { File } from './models/File';
 
 // Import services and utilities
-import { generateContentWithHistory, formatHistory, generativeModel } from './llm';
+import { createInitialPrompt, buildHistoryForChat, generativeModel, generativeModelTools, seaLionClient, geminiToolsToOpenAI, geminiHistoryToOpenAI, canvasTools, createOpenAIInitialMessages } from './llm';
+import { Content } from '@google/generative-ai';
 import { extractTextFromFile } from './fileprocessing';
 import { synthesizeSpeech } from './services/ttsService';
 import { createSpeechStream } from './services/sttService';
 import { processUserUtterance } from './services/voiceAgentService';
+import { retrieveRelevantChunks } from './services/ragService';
 import { generateModule } from './services/moduleService';
+import { summarizeConversation } from './services/memoryService';
+
 
 dotenv.config();
 
@@ -141,6 +145,132 @@ const orchestrateAndEmitCommands = async (rawCommands: Command[], socket: Socket
 };
 
 
+const runGeminiChatWorkflow = async (socket: Socket, promptText: string, sessionId: string | undefined, fileIds: string[] | undefined, languageCode: string) => {
+    const userId = socket.userId;
+    let currentSessionId = sessionId;
+    const isNewSession = !sessionId || !isValidObjectId(sessionId);
+
+    try {
+        let currentSession: any;
+        let conversationHistory: Content[] = [];
+        let documentSummaries: string | undefined = undefined;
+
+        if (fileIds && fileIds.length > 0) {
+            const files = await File.find({ '_id': { $in: fileIds }, 'userId': userId });
+            if (files.length > 0) {
+                documentSummaries = files
+                    .map(file => `File: '${file.originalFilename}', Summary: '${file.summary || 'Not available'}'`)
+                    .join('\n');
+            }
+        }
+
+        if (isNewSession) {
+            const titlePrompt = `Summarize the following user prompt into a short, descriptive title of no more than 5 words: "${promptText}"`;
+            const titleResult = await generativeModel.generateContent(titlePrompt);
+            const generatedTitle = (await titleResult.response).text().trim().replace(/['"]+/g, '');
+
+            currentSession = new Session({ title: generatedTitle || promptText.substring(0, 30), userId });
+            await currentSession.save();
+            currentSessionId = currentSession._id.toString();
+            socket.emit('session_created', { sessionId: currentSessionId, title: currentSession.title, updatedAt: currentSession.updatedAt });
+        } else {
+            currentSession = await Session.findOne({ _id: sessionId, userId: userId });
+            if (currentSession) {
+                const previousMessages = await Message.find({ sessionId: currentSession._id }).sort({ createdAt: 1 });
+                conversationHistory = buildHistoryForChat(previousMessages);
+            }
+        }
+
+        if (!currentSession) throw new Error("Session could not be found or created.");
+
+        const userMessage = new Message({ sessionId: currentSession._id, sender: 'user', text: promptText, fileIds: fileIds ? fileIds.filter(id => isValidObjectId(id)) : [] });
+        await userMessage.save();
+
+        const messageCount = await Message.countDocuments({ sessionId: currentSession._id });
+        if (messageCount > 0 && messageCount % 10 === 0) {
+            Message.find({ sessionId: currentSession._id }).sort({ createdAt: 1 }).then(messages => {
+                summarizeConversation(messages).then(summary => {
+                    if (summary) {
+                        currentSession.summary = summary;
+                        currentSession.save();
+                    }
+                });
+            });
+        }
+
+        console.log('[Socket] INFO: Starting stateful, multi-turn chat workflow with Gemini...');
+        const initialPrompt = createInitialPrompt(documentSummaries);
+        console.log('[Agentic Workflow] DEBUG: Initializing chat with history:', JSON.stringify([...initialPrompt, ...conversationHistory], null, 2));
+        const chat = generativeModelTools.startChat({ history: [...initialPrompt, ...conversationHistory] });
+
+        console.log(`[Agentic Workflow] DEBUG: Sending user prompt to LLM: "${promptText}"`);
+        let result = await chat.sendMessage(promptText);
+
+        const MAX_TURNS = 5; // Safety break
+        let turn = 0;
+        let finalCalls = null;
+
+        while (turn < MAX_TURNS) {
+            console.log(`[Agentic Workflow] DEBUG: Turn ${turn + 1} - Received LLM response:`, JSON.stringify(result.response, null, 2));
+            const calls = result.response.functionCalls();
+            if (!calls || calls.length === 0) {
+                finalCalls = result.response.functionCalls();
+                break;
+            }
+
+            const isRetrievalCall = calls.some(call => call.name === 'retrieve_document_context');
+            
+            if (isRetrievalCall) {
+                console.log(`[Agentic Workflow] INFO: Turn ${turn + 1}: LLM requested document context. Executing tool...`);
+                const toolResponses: any[] = [];
+                for (const call of calls) {
+                    if (call.name === 'retrieve_document_context') {
+                        const ragQuery = (call.args as Record<string, any>)['query'] as string;
+                        const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
+                        let ragContent = 'No relevant content found.';
+                        if (validFileIds.length > 0) {
+                            ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
+                        }
+                        toolResponses.push({
+                            functionResponse: {
+                                name: 'retrieve_document_context',
+                                response: { result: ragContent },
+                            }
+                        });
+                    }
+                }
+                console.log(`[Agentic Workflow] DEBUG: Turn ${turn + 1}: Sending tool response to LLM:`, JSON.stringify(toolResponses, null, 2));
+                result = await chat.sendMessage(JSON.stringify(toolResponses));
+            } else {
+                console.log(`[Agentic Workflow] INFO: Turn ${turn + 1}: LLM returned final visual commands. Exiting loop.`);
+                finalCalls = calls;
+                break;
+            }
+            turn++;
+        }
+
+        console.log('[Agentic Workflow] DEBUG: Loop finished. Final calls to be processed:', JSON.stringify(finalCalls, null, 2));
+        if (!finalCalls) {
+            throw new Error("LLM response did not contain function calls after synthesis.");
+        }
+
+        const commandStream: Command[] = finalCalls.map(call => ({
+            command: call.name,
+            payload: call.args
+        }));
+        
+        currentSession.updatedAt = new Date();
+        await currentSession.save();
+
+        console.log('[Socket] INFO: Handing off to orchestrator...');
+        await orchestrateAndEmitCommands(commandStream, socket, currentSession._id.toString(), languageCode);
+
+    } catch (error) {
+        console.error('[Socket] FATAL: Unhandled error in Gemini workflow:', error);
+        socket.emit('session_error', { message: 'Failed to process session with Gemini. ' + (error instanceof Error ? error.message : 'Unknown error.') });
+    }
+};
+
 // --- Main Session Socket.IO Namespace (`/`) ---
 const sessionNsp = io.of('/');
 
@@ -150,93 +280,126 @@ sessionNsp.on('connection', (socket: Socket) => {
     // Listener for starting or continuing a learning session.
     socket.on('start_session', async (data: { promptText: string, sessionId?: string, fileIds?: string[], languageCode?: string }) => {
         const { promptText, sessionId, fileIds, languageCode = 'id-ID' } = data;
-        const userId = socket.userId;
-        const isNewSession = !sessionId || !isValidObjectId(sessionId);
-        console.log(`[Socket] INFO: Received 'start_session' event. isNew: ${isNewSession}, sessionId: ${sessionId}`);
-
-        try {
-            let currentSession: any;
-            let aggregatedFileContent = '';
-            let history: string | undefined = undefined;
-
-            // If file IDs are provided, aggregate their content.
-            if (fileIds && fileIds.length > 0) {
-                console.log(`[Socket] INFO: Processing ${fileIds.length} file(s).`);
-                const validFileIds = fileIds.filter(id => isValidObjectId(id));
-                const files = await File.find({ _id: { $in: validFileIds }, userId: userId });
-
-                if (files.length !== validFileIds.length) {
-                    throw new Error('File mismatch or access denied.');
-                }
-
-                const contentPromises = files.map(file =>
-                    extractTextFromFile(file.path, file.mimetype).then(content =>
-                        `--- START OF FILE: ${file.originalFilename} ---\n${content}\n--- END OF FILE: ${file.originalFilename} ---`
-                    )
-                );
-                aggregatedFileContent = (await Promise.all(contentPromises)).join('\n\n');
-                console.log('[Socket] INFO: File content aggregated.');
-            }
-
-            // Handle new or existing sessions.
-            if (isNewSession) {
-                console.log('[Socket] INFO: Creating a new session.');
-                const titlePrompt = `Summarize the following user prompt into a short, descriptive title of no more than 5 words: "${promptText}"`;
-                const titleResult = await generativeModel.generateContent(titlePrompt);
-                const generatedTitle = (await titleResult.response).text().trim().replace(/['"]+/g, '');
-
-                currentSession = new Session({ title: generatedTitle || promptText.substring(0, 30), userId });
-                await currentSession.save();
-                console.log(`[Socket] INFO: New session created with ID: ${currentSession._id}`);
-                socket.emit('session_created', { sessionId: currentSession._id.toString(), title: currentSession.title, updatedAt: currentSession.updatedAt });
-            } else {
-                console.log(`[Socket] INFO: Finding existing session with ID: ${sessionId}`);
-                currentSession = await Session.findOne({ _id: sessionId, userId: userId });
-                if (currentSession) {
-                    const previousMessages = await Message.find({ sessionId: currentSession._id }).sort({ createdAt: -1 }).limit(5);
-                    history = formatHistory(previousMessages.reverse());
-                    console.log('[Socket] INFO: Session history formatted.');
-                }
-            }
-
-            if (!currentSession) throw new Error("Session could not be found or created.");
-
-            // Save the user's message.
-            const userMessage = new Message({ sessionId: currentSession._id, sender: 'user', text: promptText, fileIds: fileIds ? fileIds.filter(id => isValidObjectId(id)) : [] });
-            await userMessage.save();
-            console.log('[Socket] INFO: User message saved.');
-
-            // Generate the main AI response.
-            console.log('[Socket] INFO: Generating content from LLM...');
-            const rawText = await generateContentWithHistory(promptText, history, aggregatedFileContent);
-            if (!rawText) throw new Error("LLM response is empty or invalid.");
-            console.log('[Socket] INFO: Raw response received from LLM.');
-
-            // Parse the command stream from the LLM response.
-            let commandStream: Command[];
+        
+        if (seaLionClient) {
             try {
-                const jsonMatch = rawText.match(/\u005B[^]*\u005D/);
-                if (!jsonMatch) throw new Error("No valid JSON array found in LLM response.");
-                commandStream = JSON.parse(jsonMatch[0]);
-                if (!Array.isArray(commandStream)) throw new Error("LLM response was not a JSON array.");
-                console.log(`[Socket] SUCCESS: Parsed ${commandStream.length} commands from LLM response.`);
-            } catch (jsonError) {
-                console.error('[Socket] FATAL: Error parsing LLM response as JSON:', jsonError);
-                const fallbackCommands = [{ command: 'speak', payload: { text: "I seem to be having trouble formatting my thoughts. Please try again." } }];
-                await orchestrateAndEmitCommands(fallbackCommands, socket, currentSession._id.toString(), languageCode);
-                return;
+                console.log('[Socket] INFO: Attempting to use primary model: SEA-LION');
+                const userId = socket.userId;
+                let currentSessionId = sessionId;
+                const isNewSession = !sessionId || !isValidObjectId(sessionId);
+
+                let currentSession: any;
+                let conversationHistory: Content[] = [];
+                let documentSummaries: string | undefined = undefined;
+
+                if (fileIds && fileIds.length > 0) {
+                    const files = await File.find({ '_id': { $in: fileIds }, 'userId': userId });
+                    if (files.length > 0) {
+                        documentSummaries = files
+                            .map(file => `File: '${file.originalFilename}', Summary: '${file.summary || 'Not available'}'`)
+                            .join('\n');
+                    }
+                }
+
+                if (isNewSession) {
+                    const titlePrompt = `Summarize the following user prompt into a short, descriptive title of no more than 5 words: "${promptText}"`;
+                    const titleResult = await generativeModel.generateContent(titlePrompt);
+                    const generatedTitle = (await titleResult.response).text().trim().replace(/['"]+/g, '');
+
+                    currentSession = new Session({ title: generatedTitle || promptText.substring(0, 30), userId });
+                    await currentSession.save();
+                    currentSessionId = currentSession._id.toString();
+                    socket.emit('session_created', { sessionId: currentSessionId, title: currentSession.title, updatedAt: currentSession.updatedAt });
+                } else {
+                    currentSession = await Session.findOne({ _id: sessionId, userId: userId });
+                    if (currentSession) {
+                        const previousMessages = await Message.find({ sessionId: currentSession._id }).sort({ createdAt: 1 });
+                        conversationHistory = buildHistoryForChat(previousMessages);
+                    }
+                }
+
+                if (!currentSession) throw new Error("Session could not be found or created.");
+
+                const userMessage = new Message({ sessionId: currentSession._id, sender: 'user', text: promptText, fileIds: fileIds ? fileIds.filter(id => isValidObjectId(id)) : [] });
+                await userMessage.save();
+
+                const openAIInitialMessages = createOpenAIInitialMessages(documentSummaries);
+                const openAIMessages = [...openAIInitialMessages, ...geminiHistoryToOpenAI(conversationHistory)];
+                openAIMessages.push({ role: 'user', content: promptText });
+
+                const openAITools = geminiToolsToOpenAI(canvasTools);
+
+                let finalCalls: any[] | null = null;
+                const MAX_TURNS = 5;
+
+                for (let turn = 0; turn < MAX_TURNS; turn++) {
+                    console.log(`[Agentic Workflow / SEA-LION] INFO: Turn ${turn + 1}: Sending request to SEA-LION.`);
+                    const response = await seaLionClient.chat.completions.create({
+                        model: 'aisingapore/Gemma-SEA-LION-v4-27B-IT',
+                        messages: openAIMessages,
+                        tools: openAITools,
+                        tool_choice: 'auto',
+                    });
+
+                    const message = response.choices[0].message;
+
+                    if (message.tool_calls) {
+                        const toolCall = message.tool_calls[0];
+                        if (toolCall.function.name === 'retrieve_document_context') {
+                            console.log(`[Agentic Workflow / SEA-LION] INFO: Turn ${turn + 1}: Executing RAG tool.`);
+                            const args = JSON.parse(toolCall.function.arguments);
+                            const ragQuery = args['query'];
+                            const validFileIds = fileIds ? fileIds.filter(id => isValidObjectId(id)) : [];
+                            const ragContent = await retrieveRelevantChunks(ragQuery, validFileIds);
+
+                            openAIMessages.push(message);
+                            openAIMessages.push({
+                                role: 'tool',
+                                tool_call_id: toolCall.id,
+                                content: ragContent,
+                            });
+                        } else {
+                            console.log(`[Agentic Workflow / SEA-LION] INFO: Turn ${turn + 1}: Received final visual commands.`);
+                            finalCalls = message.tool_calls.map(tc => ({
+                                name: tc.function.name,
+                                args: JSON.parse(tc.function.arguments)
+                            }));
+                            break;
+                        }
+                    } else {
+                        console.log(`[Agentic Workflow / SEA-LION] INFO: Turn ${turn + 1}: Received simple text response. No tools called. Breaking loop.`);
+                        // This case might happen if the model just wants to talk.
+                        // We can treat this as a single 'speak' command.
+                        finalCalls = [{
+                            name: 'speak',
+                            args: { text: message.content || "I'm not sure how to respond to that visually." }
+                        }, { name: 'session_end', args: {} }];
+                        break;
+                    }
+                }
+
+                if (!finalCalls) {
+                    throw new Error("SEA-LION response did not result in visual commands.");
+                }
+
+                const commandStream: Command[] = finalCalls.map(call => ({
+                    command: call.name,
+                    payload: call.args
+                }));
+                
+                currentSession.updatedAt = new Date();
+                await currentSession.save();
+
+                console.log('[Socket] INFO: Handing off to orchestrator...');
+                await orchestrateAndEmitCommands(commandStream, socket, currentSession._id.toString(), languageCode);
+
+            } catch (error) {
+                console.warn('[Socket] WARN: Primary model SEA-LION failed. Falling back to Gemini.', error);
+                await runGeminiChatWorkflow(socket, promptText, sessionId, fileIds, languageCode);
             }
-            
-            currentSession.updatedAt = new Date();
-            await currentSession.save();
-
-            // Orchestrate and emit the processed commands.
-            console.log('[Socket] INFO: Handing off to orchestrator...');
-            await orchestrateAndEmitCommands(commandStream, socket, currentSession._id.toString(), languageCode);
-
-        } catch (error) {
-            console.error('[Socket] FATAL: Unhandled error in start_session handler:', error);
-            socket.emit('session_error', { message: 'Failed to process session. ' + (error instanceof Error ? error.message : 'Unknown error.') });
+        } else {
+            console.log('[Socket] INFO: Primary model (SEA-LION) not configured. Using Gemini.');
+            await runGeminiChatWorkflow(socket, promptText, sessionId, fileIds, languageCode);
         }
     });
 
@@ -293,13 +456,10 @@ liveConversationNsp.on('connection', (socket: Socket) => {
                     // Fetch full session context for the voice agent.
                     console.log('[Live] INFO: Fetching session context to generate AI response.');
                     const sessionMessages = await Message.find({ sessionId: data.sessionId }).sort({ createdAt: 1 });
-                    const files = await File.find({ _id: { $in: sessionMessages.flatMap(m => m.fileIds || []) } });
-                    const aggregatedFileContent = (await Promise.all(files.map(file => 
-                        extractTextFromFile(file.path, file.mimetype).then(content => 
-                            `--- START OF FILE: ${file.originalFilename} ---\n${content}\n--- END OF FILE: ${file.originalFilename} ---`
-                        )
-                    ))).join('\n\n');
-                    console.log(`[Live] INFO: Found ${files.length} associated files for context.`);
+                    const fileIds = sessionMessages.flatMap(m => m.fileIds || []);
+                    const validFileIds = fileIds.map(id => id.toString()).filter(id => isValidObjectId(id));
+                    const aggregatedFileContent = await retrieveRelevantChunks(transcript, validFileIds);
+                    console.log(`[Live] INFO: Retrieved relevant chunks from ${validFileIds.length} files for context.`);
 
                     // Get the agent's decision.
                     console.log('[Live] INFO: Calling Voice Agent to process utterance.');
